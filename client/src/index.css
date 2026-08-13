@@ -1,0 +1,97 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+  .dark {
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-surface-light text-ink antialiased;
+    @apply dark:bg-surface-dark dark:text-slate-100;
+    font-feature-settings: 'cv02', 'cv03', 'cv04';
+  }
+
+  *:focus-visible {
+    @apply outline-none ring-2 ring-brand-500 ring-offset-2 ring-offset-surface-light;
+    @apply dark:ring-offset-surface-dark;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-slate-300 dark:bg-slate-700;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-slate-200 bg-white shadow-card;
+    @apply dark:border-slate-800 dark:bg-surface-cardDark;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold;
+    @apply transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-brand-600 text-white hover:bg-brand-700 active:scale-[.98];
+    @apply shadow-lift disabled:hover:bg-brand-600;
+  }
+  .btn-outline {
+    @apply btn border border-brand-600 bg-transparent text-brand-600 hover:bg-brand-50;
+    @apply dark:text-brand-300 dark:border-brand-500 dark:hover:bg-brand-900/30;
+  }
+  .btn-ghost {
+    @apply btn text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800;
+  }
+  .btn-danger {
+    @apply btn bg-risk-high text-white hover:brightness-95 active:scale-[.98];
+  }
+
+  .label {
+    @apply mb-1.5 block text-sm font-semibold text-ink dark:text-slate-200;
+  }
+
+  .input {
+    @apply w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm;
+    @apply text-ink placeholder:text-slate-400 transition;
+    @apply focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20;
+    @apply dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:bg-slate-900;
+  }
+  .input-error {
+    @apply border-risk-high focus:border-risk-high focus:ring-risk-high/20;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold;
+  }
+
+  .muted {
+    @apply text-slate-500 dark:text-slate-400;
+  }
+
+  .section-title {
+    @apply text-base font-bold text-ink dark:text-slate-100;
+  }
+}
+
+/* Recharts inherits the page font rather than its own default. */
+.recharts-wrapper text {
+  font-family: inherit;
+}

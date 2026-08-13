@@ -1,0 +1,9 @@
+# Normalise line endings so the repo is identical on Windows, macOS and Linux.
+* text=auto eol=lf
+
+# Lockfiles and binaries must not be touched.
+package-lock.json -diff
+*.png binary
+*.jpg binary
+*.pdf binary
+*.task binary
