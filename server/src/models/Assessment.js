@@ -19,6 +19,42 @@ const moduleResultSchema = new mongoose.Schema(
   { _id: false }
 );
 
+/**
+ * Motor pattern classification. `type` is a real field name here (the pattern
+ * kind), which is only unambiguous inside an explicit Schema — declaring it
+ * inline would make Mongoose read it as a type declaration.
+ */
+const patternSchema = new mongoose.Schema(
+  {
+    type: { type: String, enum: ['typical', 'parkinsonian', 'hemiparetic', 'mixed'] },
+    label: { type: String },
+    summary: { type: String },
+    tentative: { type: Boolean, default: false },
+    confidence: { type: Number, min: 0, max: 1 },
+    affectedSide: { type: String, enum: ['left', 'right'], default: null },
+    scores: {
+      parkinsonian: { type: Number },
+      hemiparetic: { type: Number },
+    },
+    evidence: { type: [String], default: [] },
+  },
+  { _id: false }
+);
+
+const lateralitySchema = new mongoose.Schema(
+  {
+    index: { type: Number },
+    affectedSide: { type: String, enum: ['left', 'right'], default: null },
+    sideConsistency: { type: Number },
+    modalitiesAgreeing: { type: Number },
+    modalitiesMeasured: { type: Number },
+    perModality: { type: mongoose.Schema.Types.Mixed },
+    details: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    measured: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
+
 const assessmentSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -27,6 +63,15 @@ const assessmentSchema = new mongoose.Schema(
     face: { type: moduleResultSchema, default: null },
     hand: { type: moduleResultSchema, default: null },
     gait: { type: moduleResultSchema, default: null },
+
+    /**
+     * Which motor pattern the measurements resemble. Kept separate from the
+     * severity score: the module scores say "how much", this says "what kind".
+     */
+    pattern: { type: patternSchema, default: null },
+
+    /** Left/right comparison used to separate bilateral from one-sided patterns. */
+    laterality: { type: lateralitySchema, default: null },
 
     overallScore: { type: Number, min: 0, max: 100, required: true },
     riskLevel: {
@@ -71,6 +116,8 @@ assessmentSchema.methods.toPublic = function () {
     face: mod(this.face),
     hand: mod(this.hand),
     gait: mod(this.gait),
+    pattern: this.pattern || null,
+    laterality: this.laterality || null,
     overallScore: this.overallScore,
     riskLevel: this.riskLevel,
     riskLabel: this.riskLabel,

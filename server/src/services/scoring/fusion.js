@@ -3,6 +3,8 @@ import scoreVoice from './voice.js';
 import scoreFace from './face.js';
 import scoreHand from './hand.js';
 import scoreGait from './gait.js';
+import analyzeLaterality from './laterality.js';
+import classifyPattern from './pattern.js';
 
 export const MODULE_KEYS = ['voice', 'face', 'hand', 'gait'];
 
@@ -78,8 +80,15 @@ export function analyzeAssessment({ modules = {}, age } = {}) {
   const overallScore = Math.round(clamp(Math.min(mean - penalty, coverageCap)));
   const risk = riskFromScore(overallScore);
 
+  // Which pattern the impairment resembles is decided separately from how
+  // severe it is: the module scores answer "how much", the classifier "what kind".
+  const laterality = analyzeLaterality(modules);
+  const pattern = classifyPattern({ modules: results, raw: modules, laterality, overallScore });
+
   return {
     modules: results,
+    laterality,
+    pattern,
     overallScore,
     riskLevel: risk.level,
     riskLabel: risk.label,

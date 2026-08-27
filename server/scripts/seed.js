@@ -54,37 +54,78 @@ function features(h) {
         snrDb: rand(14, 26),
       },
     },
-    face: {
-      quality: rand(0.75, 0.97),
-      durationSec: rand(14, 20),
-      features: {
-        blinkRate: jitter(18 - inv * 9, 0.2),
-        expressivityIndex: jitter(0.16 - inv * 0.12, 0.15),
-        smileAmplitude: jitter(0.26 - inv * 0.19, 0.15),
-        browRaiseAmplitude: jitter(0.15 - inv * 0.11, 0.15),
-        asymmetryIndex: jitter(0.03 + inv * 0.13, 0.2),
-        mouthOpenRange: jitter(0.18 - inv * 0.13, 0.15),
-        eyeOpenAsymmetry: jitter(0.03 + inv * 0.14, 0.2),
-        trackedRatio: rand(0.82, 0.99),
-        brightness: rand(0.42, 0.6),
-      },
-    },
-    hand: {
-      quality: rand(0.72, 0.96),
-      durationSec: rand(24, 30),
-      features: {
-        tapFrequencyHz: jitter(5.2 - inv * 3.4, 0.12),
-        tapAmplitudeMean: jitter(0.4 - inv * 0.28, 0.15),
-        tapAmplitudeDecay: jitter(0.07 + inv * 0.4, 0.2),
+    face: (() => {
+      const expr = jitter(0.16 - inv * 0.12, 0.15);
+      const smile = jitter(0.26 - inv * 0.19, 0.15);
+      const brow = jitter(0.15 - inv * 0.11, 0.15);
+      const shut = jitter(0.013, 0.3);
+      // The demo user is symmetric: both sides move together, which is what
+      // produces a bilateral (non-hemiparetic) reading.
+      const side = (base) => base * rand(0.93, 1.07);
+      return {
+        quality: rand(0.75, 0.97),
+        durationSec: rand(20, 26),
+        features: {
+          blinkRate: jitter(18 - inv * 9, 0.2),
+          expressivityIndex: expr,
+          smileAmplitude: smile,
+          browRaiseAmplitude: brow,
+          asymmetryIndex: jitter(0.03 + inv * 0.05, 0.2),
+          mouthOpenRange: jitter(0.18 - inv * 0.13, 0.15),
+          eyeOpenAsymmetry: jitter(0.03 + inv * 0.04, 0.2),
+          trackedRatio: rand(0.82, 0.99),
+          brightness: rand(0.42, 0.6),
+          left: { expressivity: side(expr), smile: side(smile), brow: side(brow), eyeShutResidual: side(shut) },
+          right: { expressivity: side(expr), smile: side(smile), brow: side(brow), eyeShutResidual: side(shut) },
+          eyeClosureGap: Math.abs(side(shut) - side(shut)),
+          eyeClosureTested: true,
+        },
+      };
+    })(),
+    hand: (() => {
+      const tap = jitter(5.2 - inv * 3.4, 0.12);
+      const amp = jitter(0.4 - inv * 0.28, 0.15);
+      const decay = jitter(0.07 + inv * 0.4, 0.2);
+      // Rest tremor becomes progressively less likely as wellness improves,
+      // rather than switching on at a hard threshold.
+      const tremorHz = Math.random() < Math.max(0, (0.72 - h) / 0.45)
+        ? rand(4.0, 6.2)   // rest-tremor band
+        : rand(8, 11.5);   // physiological tremor
+      const tremorPower = jitter(0.06 + inv * 0.38, 0.2);
+      // Both hands perform similarly - a bilateral, not one-sided, profile.
+      const side = () => ({
+        tapFrequencyHz: tap * rand(0.94, 1.06),
+        tapAmplitudeMean: amp * rand(0.94, 1.06),
+        tapAmplitudeDecay: decay * rand(0.9, 1.1),
         tapIntervalCv: jitter(0.12 + inv * 0.38, 0.18),
         tapHesitations: Math.round(rand(0, 1) + inv * rand(0, 5)),
-        tremorPeakHz: h > 0.6 ? rand(8, 11.5) : rand(4.0, 6.2),
-        tremorPowerRatio: jitter(0.06 + inv * 0.38, 0.2),
+        tremorPeakHz: tremorHz,
+        tremorPowerRatio: tremorPower * rand(0.9, 1.1),
         holdDriftPx: jitter(0.012 + inv * 0.09, 0.2),
-        trackedRatio: rand(0.8, 0.99),
-        sampleCount: Math.round(rand(280, 420)),
-      },
-    },
+        holdDropY: rand(-0.01, 0.01),
+      });
+      const left = side();
+      const right = side();
+      return {
+        quality: rand(0.72, 0.96),
+        durationSec: rand(34, 40),
+        features: {
+          tapFrequencyHz: Math.min(left.tapFrequencyHz, right.tapFrequencyHz),
+          tapAmplitudeMean: amp,
+          tapAmplitudeDecay: decay,
+          tapIntervalCv: jitter(0.12 + inv * 0.38, 0.18),
+          tapHesitations: Math.round(rand(0, 1) + inv * rand(0, 5)),
+          tremorPeakHz: tremorHz,
+          tremorPowerRatio: tremorPower,
+          holdDriftPx: jitter(0.012 + inv * 0.09, 0.2),
+          trackedRatio: rand(0.8, 0.99),
+          sampleCount: Math.round(rand(560, 840)),
+          left,
+          right,
+          bothSidesTested: true,
+        },
+      };
+    })(),
     gait: {
       quality: rand(0.7, 0.95),
       durationSec: rand(20, 26),
@@ -99,6 +140,17 @@ function features(h) {
         doubleSupportRatio: jitter(0.23 + inv * 0.18, 0.12),
         trackedRatio: rand(0.78, 0.98),
         stepCount: Math.round(rand(16, 30)),
+        left: {
+          stepCount: Math.round(rand(8, 15)),
+          stepInterval: jitter(1.05, 0.06),
+          armSwing: jitter(0.17 - inv * 0.13, 0.12),
+        },
+        right: {
+          stepCount: Math.round(rand(8, 15)),
+          stepInterval: jitter(1.05, 0.06),
+          armSwing: jitter(0.17 - inv * 0.13, 0.12),
+        },
+        bothLegsDetected: true,
       },
     },
   };
@@ -136,7 +188,7 @@ async function seed() {
     const progress = (WEEKS - 1 - i) / (WEEKS - 1); // 0 -> 1 over time
     // Tuned so the series starts in the mild/moderate band and climbs into the
     // low-risk band, which is the shape the dashboard mockup shows.
-    const health = Math.max(0.15, Math.min(0.95, 0.34 + progress * 0.26 + rand(-0.05, 0.05)));
+    const health = Math.max(0.15, Math.min(0.95, 0.34 + progress * 0.46 + rand(-0.05, 0.05)));
 
     const completedAt = new Date(now.getTime() - i * 7 * 86400000);
     completedAt.setHours(9 + Math.floor(rand(0, 8)), Math.floor(rand(0, 59)), 0, 0);
@@ -151,6 +203,8 @@ async function seed() {
       face: analysis.modules.face,
       hand: analysis.modules.hand,
       gait: analysis.modules.gait,
+      pattern: analysis.pattern,
+      laterality: analysis.laterality,
       overallScore: analysis.overallScore,
       riskLevel: analysis.riskLevel,
       riskLabel: analysis.riskLabel,

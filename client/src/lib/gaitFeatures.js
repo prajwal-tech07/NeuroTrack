@@ -163,6 +163,21 @@ export class GaitTracker {
       doubleSupportRatio: round(doubleSupportRatio, 4),
       trackedRatio: round(this.trackedRatio, 3),
       frameCount: this.frames,
+
+      // ---- Per-side block consumed by the laterality engine ----
+      // Hemiparetic gait shows one leg stepping less often and one arm barely
+      // swinging; Parkinsonian gait reduces both roughly together.
+      left: {
+        stepCount: leftSteps.length,
+        stepInterval: round(leftInterval, 4),
+        armSwing: round(leftSwing, 4),
+      },
+      right: {
+        stepCount: rightSteps.length,
+        stepInterval: round(rightInterval, 4),
+        armSwing: round(rightSwing, 4),
+      },
+      bothLegsDetected: leftSteps.length >= 2 && rightSteps.length >= 2,
     };
   }
 

@@ -10,7 +10,8 @@
     "dev:client": "npm --prefix client run dev",
     "seed": "npm --prefix server run seed",
     "build": "npm --prefix client run build",
-    "start": "npm --prefix server start"
+    "start": "npm --prefix server start",
+    "validate": "npm --prefix server run validate"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

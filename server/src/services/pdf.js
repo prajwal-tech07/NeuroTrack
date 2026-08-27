@@ -196,6 +196,82 @@ function recommendationsBlock(doc, y, recommendations) {
   return cursor;
 }
 
+
+const PATTERN_COLORS = {
+  typical: '#16A34A',
+  parkinsonian: '#F59E0B',
+  hemiparetic: '#DC2626',
+  mixed: '#EA580C',
+};
+
+/** Movement-pattern block: what kind of impairment, separate from how severe. */
+function patternBlock(doc, y, pattern, laterality) {
+  if (!pattern) return y;
+
+  const color = PATTERN_COLORS[pattern.type] || INK;
+  const urgent = pattern.type === 'hemiparetic' && !pattern.tentative;
+  const boxH = urgent ? 132 : 100;
+
+  doc.roundedRect(50, y, 495, boxH, 8).lineWidth(1.4).strokeColor(color).stroke();
+
+  doc.fillColor(MUTED).fontSize(8).font('Helvetica-Bold').text('MOVEMENT PATTERN', 62, y + 12);
+  doc
+    .fillColor(color)
+    .fontSize(15)
+    .font('Helvetica-Bold')
+    .text(
+      pattern.label + (pattern.affectedSide ? ` (${pattern.affectedSide} side)` : ''),
+      62,
+      y + 26,
+      { width: 400 }
+    );
+
+  doc
+    .fillColor(MUTED)
+    .fontSize(7.5)
+    .font('Helvetica')
+    .text(`${Math.round((pattern.confidence || 0) * 100)}% confidence`, 440, y + 14, {
+      width: 95,
+      align: 'right',
+    });
+
+  let cursor = doc.y + 3;
+  doc.fillColor(MUTED).fontSize(8.5).font('Helvetica').text(pattern.summary, 62, cursor, { width: 470 });
+  cursor = doc.y + 5;
+
+  if (laterality?.measured && Number.isFinite(laterality.index)) {
+    doc
+      .fillColor(INK)
+      .fontSize(8)
+      .font('Helvetica')
+      .text(
+        `Left/right difference: ${Math.round(laterality.index * 100)}%` +
+          (laterality.affectedSide ? ` · ${laterality.affectedSide} side weaker` : '') +
+          ' (0% = both sides equal, 100% = fully one-sided)',
+        62,
+        cursor,
+        { width: 470 }
+      );
+    cursor = doc.y + 4;
+  }
+
+  if (urgent) {
+    doc
+      .fillColor('#DC2626')
+      .fontSize(8.5)
+      .font('Helvetica-Bold')
+      .text(
+        'IF THIS STARTED SUDDENLY, SEEK EMERGENCY CARE NOW (112 India / 911 US / 999 UK). ' +
+          'Sudden one-sided weakness or facial drooping can indicate a stroke.',
+        62,
+        cursor,
+        { width: 470 }
+      );
+  }
+
+  return y + boxH + 18;
+}
+
 /** Monthly report PDF. Returns a readable stream. */
 export function buildReportPDF(user, report) {
   const doc = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true });
@@ -275,6 +351,8 @@ export function buildAssessmentPDF(user, assessment) {
     'vs previous assessment'
   );
   y += 74 + 24;
+
+  y = patternBlock(doc, y, assessment.pattern, assessment.laterality);
 
   doc.fillColor(INK).fontSize(13).font('Helvetica-Bold').text('Module scores', 50, y);
   y += 22;

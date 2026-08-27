@@ -90,9 +90,9 @@ the device.**
 | Module | Capture | Measurements extracted |
 |---|---|---|
 | **Voice** | 8 s sustained vowel + 12 s read sentence, via `MediaRecorder` | Jitter, shimmer, harmonics-to-noise ratio, pitch spread (semitones), pause ratio, speech rate, max phonation time, loudness CV |
-| **Face** | 18 s webcam, MediaPipe FaceLandmarker (478 landmarks + 52 blendshapes) | Blink rate, expressivity index, smile/brow amplitude, left–right asymmetry, jaw range, eye aperture symmetry |
-| **Hand** | 15 s finger tapping + 12 s postural hold, MediaPipe HandLandmarker | Tap frequency, amplitude, amplitude decrement, inter-tap CV, hesitations, dominant tremor frequency (FFT), 3.5–6.5 Hz band power ratio, postural drift |
-| **Gait** | 22 s marching in place, MediaPipe PoseLandmarker | Cadence, step-time CV, step symmetry, arm swing amplitude and asymmetry, trunk sway, forward lean, double-support proxy |
+| **Face** | 24 s webcam, MediaPipe FaceLandmarker (478 landmarks + 52 blendshapes). Four cues: rest, smile, brow raise, eyes shut | Blink rate, expressivity index, smile/brow amplitude, left–right asymmetry, jaw range, **per-side** expressivity/smile/brow, **eye-closure residual per side** |
+| **Hand** | 38 s, MediaPipe HandLandmarker. Tap + hold on the **left** hand, then the **right** | Per hand: tap frequency, amplitude, amplitude decrement, inter-tap CV, hesitations, dominant tremor frequency (FFT), 3.5–6.5 Hz band power ratio, postural drift and downward drift |
+| **Gait** | 22 s marching in place, MediaPipe PoseLandmarker | Cadence, step-time CV, step symmetry, arm swing amplitude and asymmetry, trunk sway, forward lean, double-support proxy, **per-leg step interval and per-arm swing** |
 
 ### How a score is produced
 
@@ -106,7 +106,11 @@ the device.**
 3. **Fusion** takes a quality-weighted mean of the completed modules, applies a *weakest-link*
    correction (one poor modality is not washed out by three good ones, because early signs usually
    appear in one domain first), and caps partial assessments.
-4. **Recommendations** are generated from the resulting flags and score deltas
+4. **Laterality and pattern** are computed separately from severity: `laterality.js`
+   compares each paired left/right measurement, and `pattern.js` classifies the result as
+   typical, Parkinsonian, one-sided weakness or mixed. See
+   [Movement pattern detection](#movement-pattern-detection).
+5. **Recommendations** are generated from the pattern, flags and score deltas
    (`server/src/services/recommendations.js`).
 
 Raw feature vectors are stored alongside every score, so historical assessments can be re-scored if
@@ -131,7 +135,9 @@ NeuroTrackAi/
 │       ├── lib/          DSP, audio features, MediaPipe loaders, landmark analysis
 │       └── pages/        landing, auth, dashboard, assessment, result, reports, history, profile, settings
 └── server/
-    ├── scripts/seed.js
+    ├── scripts/
+    │   ├── seed.js       demo account with 6 months of history
+    │   └── validate.js   pattern-classifier regression harness
     └── src/
         ├── controllers/  auth, user, assessment, dashboard, report
         ├── jobs/         weekly reminder + monthly report cron
@@ -139,7 +145,7 @@ NeuroTrackAi/
         ├── models/       User, Assessment, Report
         ├── routes/
         ├── services/
-        │   ├── scoring/  voice, face, hand, gait, fusion
+        │   ├── scoring/  voice, face, hand, gait, laterality, pattern, fusion
         │   ├── pdf.js    report and assessment PDFs
         │   ├── reports.js
         │   └── mailer.js
@@ -198,6 +204,66 @@ All routes are under `/api`. Authenticated routes need `Authorization: Bearer <a
 | GET | `/reports/:id/pdf` | Report PDF |
 
 ---
+
+## Movement pattern detection
+
+Beyond "how impaired" (the 0-100 score), the engine reports **what kind** of
+impairment the measurements resemble. This is how a clinician reasons: localise
+the pattern first, diagnose second.
+
+| Pattern | What it means | Signature |
+|---|---|---|
+| **Typical** | Everything in reference range | Symmetric, all measures normal |
+| **Parkinsonian** | Bilateral hypokinesia | Both sides slowed together, amplitude decrement, 4-6 Hz rest tremor, reduced expression on both sides |
+| **One-sided weakness** (hemiparetic) | Unilateral weakness | One side consistently weaker across modalities, incomplete eye closure, arm drift, **no** rest tremor |
+| **Mixed** | Impaired but unclear | Outside normal ranges without a consistent picture |
+
+The discriminating measurement is the **laterality index**: a normalised
+left/right difference computed per modality and aggregated. Parkinsonian
+slowing is broadly symmetric (low index); hemiparesis is not (high index, with
+the same side weak across modalities).
+
+This is why the hand test captures **both hands** and the face test includes an
+eyes-shut cue — laterality is unmeasurable from one side, and incomplete eye
+closure (lagophthalmos) is highly specific to facial weakness and does not occur
+in Parkinsonian hypomimia.
+
+Patterns are reported at two tiers. Above the confidence threshold the pattern
+is stated plainly; below it, the result is flagged as a *possible early* pattern
+with low confidence and framed as "re-test next week" rather than a finding.
+Forcing weak signals to "typical" would be a false negative on exactly the early
+cases screening exists to catch.
+
+### Safety behaviour
+
+A confident one-sided-weakness result triggers an **interrupting emergency
+notice**, not a dashboard number, in both the UI and the PDF: sudden unilateral
+weakness or facial droop can indicate a stroke, where treatment is time-critical.
+The weekly-tracking framing is deliberately broken for this one case.
+
+### Validation
+
+```bash
+npm run validate                    # full severity range
+npm --prefix server run validate -- --hard      # mild/early cases only
+npm --prefix server run validate -- --n 500 --seed 7 --verbose
+```
+
+Measured on **synthetic labelled profiles** (300 per class):
+
+| Test set | Accuracy | Notes |
+|---|---|---|
+| Full severity range | **99.9%** | All classes >= 99.7% recall |
+| Mild / early only (`--hard`) | **94.1%** | 93.2-94.8% across seeds; the number worth trusting |
+| Affected-side identification | **100%** | Which side, given a one-sided result |
+
+> **This is a regression test, not clinical validation.** The cases are
+> simulated and we assigned the labels ourselves, so the number says "the
+> classifier separates the patterns it was designed to separate, and this change
+> did not break it". It does **not** say how often it is right about a real
+> patient — that needs real labelled patients, which this project does not have.
+> Quote it as *accuracy on synthetic profiles*, never as diagnostic accuracy.
+
 
 ## Configuration
 

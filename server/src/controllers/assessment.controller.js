@@ -31,6 +31,8 @@ export const submitAssessment = asyncHandler(async (req, res) => {
     face: analysis.modules.face,
     hand: analysis.modules.hand,
     gait: analysis.modules.gait,
+    pattern: analysis.pattern,
+    laterality: analysis.laterality,
     overallScore: analysis.overallScore,
     riskLevel: analysis.riskLevel,
     riskLabel: analysis.riskLabel,

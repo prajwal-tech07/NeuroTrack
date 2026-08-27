@@ -5,9 +5,19 @@ import { loadHandLandmarker } from '../../lib/mediapipe.js';
 import { HandTracker } from '../../lib/handFeatures.js';
 import useVisionRecorder from '../../hooks/useVisionRecorder.js';
 
-const TAP_SEC = 15;
-const HOLD_SEC = 12;
-const DURATION = TAP_SEC + HOLD_SEC;
+/**
+ * Four cued sub-tasks in one capture. Both hands are required: the difference
+ * between them is what separates bilateral slowing (Parkinsonian) from
+ * one-sided weakness (hemiparesis), and it cannot be measured from one hand.
+ */
+const STAGES = [
+  { until: 11, side: 'left', phase: 'tap', action: 'Tap with your LEFT hand', hint: 'Thumb to index finger, as big and fast as you can' },
+  { until: 19, side: 'left', phase: 'hold', action: 'Hold your LEFT hand still', hint: 'Arm out, palm down, as steady as possible' },
+  { until: 30, side: 'right', phase: 'tap', action: 'Tap with your RIGHT hand', hint: 'Same again — big and fast' },
+  { until: 38, side: 'right', phase: 'hold', action: 'Hold your RIGHT hand still', hint: 'Arm out, palm down, hold steady' },
+];
+
+const DURATION = STAGES[STAGES.length - 1].until;
 
 /** Skeleton edges for the overlay. */
 const CONNECTIONS = [
@@ -19,6 +29,8 @@ const CONNECTIONS = [
   [0, 17],
 ];
 
+const stageAt = (t) => STAGES.find((s) => t < s.until) || STAGES[STAGES.length - 1];
+
 export default function HandTest({ onComplete, onSkip, initial }) {
   const trackerRef = useRef(null);
   const [result, setResult] = useState(initial || null);
@@ -26,9 +38,11 @@ export default function HandTest({ onComplete, onSkip, initial }) {
   const handleResult = useCallback((res, ts) => {
     const tracker = trackerRef.current;
     if (!tracker) return;
-    // Switch phases mid-recording so both tasks land in one capture session.
+
     const elapsed = tracker.startMs === null ? 0 : (ts - tracker.startMs) / 1000;
-    tracker.setPhase(elapsed < TAP_SEC ? 'tap' : 'hold');
+    const stage = stageAt(elapsed);
+    tracker.setSide(stage.side);
+    tracker.setPhase(stage.phase);
     tracker.push(res, ts);
   }, []);
 
@@ -84,33 +98,35 @@ export default function HandTest({ onComplete, onSkip, initial }) {
     recorder.reset();
   };
 
-  const inTap = recorder.elapsed < TAP_SEC;
+  const stage = recorder.isRecording ? stageAt(recorder.elapsed) : null;
+  const stageIndex = stage ? STAGES.indexOf(stage) + 1 : 0;
+
   const prompt = recorder.isRecording
-    ? inTap
-      ? {
-          step: `Task 1 of 2 · ${Math.ceil(TAP_SEC - recorder.elapsed)}s left`,
-          action: 'Tap thumb and index finger',
-          hint: 'As big and as fast as you can, without stopping',
-        }
-      : {
-          step: `Task 2 of 2 · ${Math.ceil(DURATION - recorder.elapsed)}s left`,
-          action: 'Hold your hand still',
-          hint: 'Arm out, palm down, as steady as possible',
-        }
+    ? {
+        step: `Task ${stageIndex} of 4 · ${Math.ceil(stage.until - recorder.elapsed)}s left`,
+        action: stage.action,
+        hint: stage.hint,
+      }
     : {
-        step: 'Two hand tasks',
-        action: 'Tap, then hold',
-        hint: `${TAP_SEC}s tapping + ${HOLD_SEC}s steady hold`,
+        step: 'Four hand tasks',
+        action: 'Left hand, then right',
+        hint: `${DURATION}s total — tap and hold on each side`,
       };
+
+  const sideStat = (side) => {
+    const s = result?.features?.[side];
+    return s ? `${s.tapFrequencyHz} Hz` : '—';
+  };
 
   return (
     <TestShell
       title="Hand Movement & Tremor Test"
-      intro="Measures repetitive-movement speed, amplitude decrement and rhythm, then runs a frequency analysis for tremor."
+      intro="Measures tapping speed, amplitude decrement and rhythm on each hand separately, then runs a frequency analysis for tremor."
       instructions={[
         'Hold one hand about 40 cm from the camera, palm facing it.',
-        `Task 1 (${TAP_SEC}s): tap your thumb and index finger together as big and fast as you can.`,
-        `Task 2 (${HOLD_SEC}s): hold the same hand out, as still as you can manage.`,
+        'You will do four short tasks: tap and hold with your LEFT hand, then the same with your RIGHT.',
+        'Follow the on-screen cue — it tells you which hand and what to do.',
+        'Testing both hands is what lets the analysis tell one-sided weakness apart from overall slowing.',
         'Avoid caffeine right before testing — it raises normal physiological tremor.',
       ]}
       error={recorder.error}
@@ -122,13 +138,13 @@ export default function HandTest({ onComplete, onSkip, initial }) {
         prompt={prompt}
         subjectLabel="hand"
         idleTitle="Camera off"
-        idleHint={`${DURATION} seconds across two tasks. Keep your whole hand in frame throughout.`}
-        doneTitle="Hand captured"
+        idleHint={`${DURATION} seconds across four tasks. Switch hands when the cue tells you to.`}
+        doneTitle="Both hands captured"
         doneStats={
           result
             ? [
-                ['Tap rate', `${result.features.tapFrequencyHz} Hz`],
-                ['Taps', result.features.tapCount],
+                ['Left taps', sideStat('left')],
+                ['Right taps', sideStat('right')],
                 ['Tremor peak', `${result.features.tremorPeakHz} Hz`],
                 ['Tracked', `${Math.round(result.features.trackedRatio * 100)}%`],
               ]

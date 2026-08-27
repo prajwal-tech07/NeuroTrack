@@ -7,6 +7,63 @@
  */
 
 const RULES = [
+  // ---- Pattern-driven, highest priority of all ----------------------------
+  {
+    when: (a) => a.pattern?.type === 'hemiparetic' && !a.pattern?.tentative,
+    priority: 'high',
+    category: 'pattern',
+    title: (a) =>
+      `One-sided weakness detected${a.pattern.affectedSide ? ` on your ${a.pattern.affectedSide} side` : ''}`,
+    detail:
+      'Your measurements were consistently weaker on one side across several tests. ' +
+      'IF THIS CAME ON SUDDENLY — over minutes or hours — treat it as a medical emergency and call ' +
+      'emergency services now (112 in India, 911 in the US); sudden one-sided weakness or facial ' +
+      'drooping can be a stroke, and treatment is time-critical. If it has developed gradually or has ' +
+      'been present a long time, book a neurologist appointment and take this report with you.',
+  },
+  {
+    when: (a) => a.pattern?.type === 'hemiparetic' && a.pattern?.tentative,
+    priority: 'high',
+    category: 'pattern',
+    title: 'Possible early one-sided difference',
+    detail:
+      'One side measured slightly weaker than the other, but the signal is weak and could be normal ' +
+      'variation — most people are not perfectly symmetric. Repeat the assessment in the next day or ' +
+      'two under good lighting. If anything changed suddenly, or you notice new facial drooping, ' +
+      'slurred speech or arm weakness, seek medical help immediately rather than waiting.',
+  },
+  {
+    when: (a) => a.pattern?.type === 'parkinsonian' && !a.pattern?.tentative,
+    priority: 'high',
+    category: 'pattern',
+    title: 'Movement pattern suggests bilateral slowing',
+    detail:
+      'Your measurements show slowed, reduced-amplitude movement affecting both sides fairly evenly. ' +
+      'Many things cause this — including fatigue, low mood, medication and normal ageing — so it is ' +
+      'not a diagnosis. Repeat weekly for a month: a consistent pattern across several assessments is ' +
+      'worth taking to a neurologist, a single reading is not.',
+  },
+  {
+    when: (a) => a.pattern?.type === 'parkinsonian' && a.pattern?.tentative,
+    priority: 'medium',
+    category: 'pattern',
+    title: 'Possible early bilateral slowing',
+    detail:
+      'There is a mild, symmetric reduction in movement speed and range. This is exactly the kind of ' +
+      'signal that is meaningless in isolation and meaningful as a trend, so keep testing weekly at ' +
+      'the same time of day and watch the direction over the next month.',
+  },
+  {
+    when: (a) => a.pattern?.type === 'mixed',
+    priority: 'medium',
+    category: 'pattern',
+    title: 'Results do not match a single clear pattern',
+    detail:
+      'Some measurements were outside typical ranges but they do not form a consistent picture. The ' +
+      'most common reason is capture quality — poor lighting, a partly out-of-frame hand, or rushing ' +
+      'a task. Re-test carefully; if the mixed result repeats, mention it to a clinician.',
+  },
+
   // ---- Flag-driven, highest priority ----
   {
     when: (a) => a.flags.includes('hand_rest_tremor_band'),
@@ -176,6 +233,8 @@ export function buildRecommendations(analysis, max = 6) {
     completedModules: analysis.completedModules || [],
     delta: analysis.delta ?? null,
     modules: analysis.modules || {},
+    pattern: analysis.pattern || null,
+    laterality: analysis.laterality || null,
   };
 
   const matched = RULES.filter((r) => {
