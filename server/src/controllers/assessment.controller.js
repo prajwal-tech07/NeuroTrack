@@ -37,11 +37,11 @@ export const submitAssessment = asyncHandler(async (req, res) => {
     riskLevel: analysis.riskLevel,
     riskLabel: analysis.riskLabel,
     conditions: analysis.conditions || null,
-    scoringEngine: analysis.scoringEngine || 'ml-v1',
+    scoringEngine: analysis.scoringEngine,
     delta,
     recommendations,
     flags: analysis.flags,
-    engineVersion: analysis.engineVersion || '2.0.0',
+    engineVersion: analysis.engineVersion,
     completedAt: new Date(),
   });
 

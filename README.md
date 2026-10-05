@@ -191,6 +191,7 @@ All routes are under `/api`. Authenticated routes need `Authorization: Bearer <a
 | GET | `/users/export` | Full JSON data export |
 | DELETE | `/users/account` | Delete account and all data |
 | POST | `/assessments` | Submit feature vectors, get analysis |
+| POST | `/assessments/voice-audio` | Score the sustained-vowel WAV with the voice model (multipart `audio`) |
 | GET | `/assessments` | Paginated history (`page`, `limit`, `riskLevel`, `from`, `to`) |
 | GET | `/assessments/latest` | Most recent assessment |
 | GET | `/assessments/:id` | One assessment |
@@ -265,6 +266,53 @@ Measured on **synthetic labelled profiles** (300 per class):
 > Quote it as *accuracy on synthetic profiles*, never as diagnostic accuracy.
 
 
+## Voice model (trained on real recordings)
+
+The 8-second sustained "Aaah" from the voice test is scored by a model trained on **real patients**,
+not on simulated data. It runs in the Python service (`ml-service/`) and contributes 35% of the voice
+module score; the other 65% stays with the clinical heuristics.
+
+- **Training data:** Sakar et al. 2018 (UCI #470), 756 recordings from 252 people (188 Parkinson's,
+  64 healthy).
+- **Features:** Praat voice-report measures (shimmer, harmonicity, pitch period) plus formants,
+  normalised by sex. They are extracted with the same Praat engine at training and at inference.
+  Jitter is measured and shown to the user but left out of the model: its value changes 5-14x between
+  microphones.
+- **Model:** gradient-boosted trees (XGBoost), chosen over logistic regression and a blend of both.
+
+Measured with **subject-grouped cross-validation**: every person's recordings sit entirely in train or
+entirely in test (5 folds x 10 repeats).
+
+| Metric | Value |
+|---|---|
+| AUC | **0.82** (95% CI 0.77-0.89) |
+| Balanced accuracy | **0.74** (95% CI 0.69-0.81) |
+| Sensitivity / specificity | 0.74 / 0.73 |
+
+> These are honest but **in-domain** numbers: the training audio was recorded on studio equipment.
+> On a second public dataset (8 kHz telephone-quality audio) the model did no better than chance, and
+> neither did any single feature, so that recording quality carries no usable signal. Browser
+> microphones are untested. Two safeguards follow from that. The model's output is ignored whenever a
+> recording does not resemble the training data (an out-of-distribution gate). And its weight in the
+> voice score is kept moderate. Real browser-recorded data from healthy volunteers and patients is the
+> next step for reliable accuracy.
+>
+> Older figures such as "92%" or "95%" came from random row splits (the same person in train and
+> test) or from synthetic data. Do not quote them.
+
+Reproduce (from `ml-service/`):
+
+```bash
+pip install -r requirements.txt
+python scripts/download_voice_data.py   # public datasets -> data/raw/ (gitignored)
+python scripts/train_voice_model.py     # trains, evaluates, writes app/models/voice_pd_model*.{joblib,json}
+python -m pytest tests -q               # set PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 if a global plugin breaks pytest
+```
+
+The other ML-service classifiers (Parkinson's, paralysis) are transparent rule engines. Their
+"confidence" is the share of relevant tests completed, weighted by recording quality. It is not an
+accuracy. The face-photo model is trained on synthetic data and is labelled as such.
+
 ## Configuration
 
 Everything lives in `server/.env` (see `server/.env.example`). The only value you must set for local
@@ -288,6 +336,8 @@ node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 | `npm run dev:server` / `npm run dev:client` | Run one side only |
 | `npm run seed` | Reset and reseed the demo account (`-- --keep` preserves existing data) |
 | `npm run build` | Production build of the client |
+| `npm run dev:ml` | Run the Python ML service (voice model) on :8000 |
+| `npm --prefix server test` | Server unit tests (voice-model blending, WAV encoder) |
 | `npm start` | Run the API alone (serve `client/dist` behind your own web server) |
 
 ---
@@ -299,5 +349,8 @@ there. The MediaPipe model files are fetched from Google's CDN the first time an
 are cached by the browser afterwards, so the **first** assessment on a new machine needs an internet
 connection.
 
-Recordings are never uploaded. Only derived numeric features are sent to the server, and every user
-can export or permanently delete all of their data from within the app.
+Video is never uploaded, and neither is most of the audio. The one exception is the 8-second sustained
+"Aaah" from the voice test: it is sent as a WAV file to the voice model, processed in memory, and
+discarded without being stored. Everything else is analysed on the device, and only derived numeric
+features reach the server. Every user can export or permanently delete all of their data from within
+the app.

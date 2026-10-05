@@ -8,6 +8,11 @@ Classifies facial features extracted by FacePipeline into 3 neurological categor
   - Healthy
 
 Falls back to rule-based scoring from FacePipeline if the ML model is not loaded.
+
+NOTE: face_model.joblib was trained on SYNTHETIC feature distributions
+(scripts/train_face_model.py), not on recordings of real patients. Its
+held-out "accuracy" only measures how well it separates those synthetic
+distributions, so it is not reported as a real-world accuracy anywhere.
 """
 
 import os
@@ -69,8 +74,7 @@ class FaceClassifier:
                 self.label_map = bundle.get("label_map", LABEL_MAP)
                 self.accuracy  = bundle.get("accuracy")
                 engine = bundle.get("engine", "face-ensemble")
-                acc_str = f" (accuracy={self.accuracy*100:.1f}%)" if self.accuracy else ""
-                logger.info(f"Loaded Face model [{engine}]{acc_str} from {path}")
+                logger.info(f"Loaded Face model [{engine}] from {path} (trained on synthetic data)")
             except Exception as e:
                 logger.warning(f"Could not load Face model from {path}: {e}")
         else:
@@ -179,7 +183,7 @@ class FaceClassifier:
             "finalScore":     final_score,
             "flags":          flags,
             "indicators":     indicators,
-            "engine":         "face-ensemble-v1",
+            "engine":         "face-ensemble-synthetic-v1",
         }
 
 

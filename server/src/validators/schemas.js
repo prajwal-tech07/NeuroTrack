@@ -61,6 +61,8 @@ const moduleSchema = z
     features: z.record(z.any()).default({}),
     quality: z.number().min(0).max(1).optional(),
     durationSec: z.number().min(0).optional(),
+    /** Trained-model output (voice only); re-validated field by field in the scorer. */
+    ml: z.record(z.any()).optional().nullable(),
   })
   .optional()
   .nullable();

@@ -15,6 +15,12 @@ import {
 import { IconDownload, IconHistory } from '../components/Icons.jsx';
 import { MODULE_META, formatDateTime, riskStyle } from '../utils/format.js';
 
+const ENGINE_LABELS = {
+  'rules-v1': 'Clinical heuristics',
+  'rules+voice-ml-v1': 'Clinical heuristics + voice model',
+  'ml-v1': 'Clinical heuristics', // legacy label: these were always rule-scored
+};
+
 const STATUS_STYLE = {
   normal: 'text-risk-low bg-risk-low/10 border-risk-low/25',
   borderline: 'text-risk-mild bg-risk-mild/10 border-risk-mild/25',
@@ -291,14 +297,14 @@ export default function Result() {
           <span>Targeted Condition Screening</span>
           {assessment.scoringEngine && (
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-brand-50 text-brand-600 border border-brand-200 dark:bg-brand-950 dark:text-brand-300 dark:border-brand-800">
-              {assessment.scoringEngine === 'ml-v1' ? 'AI / ML Multi-Model' : 'Clinical Heuristics'}
+              {ENGINE_LABELS[assessment.scoringEngine] || 'Clinical heuristics'}
             </span>
           )}
         </h2>
 
         <div className="grid gap-5 md:grid-cols-2">
           {/* Parkinson's Card */}
-          {assessment.conditions?.parkinsons ? (
+          {typeof assessment.conditions?.parkinsons?.score === 'number' ? (
             <div className="card p-6 border-l-4 border-l-purple-500 flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between gap-2">
@@ -314,7 +320,8 @@ export default function Result() {
                     {assessment.conditions.parkinsons.score}%
                   </div>
                   <div className="text-xs muted leading-relaxed">
-                    Confidence: {Math.round((assessment.conditions.parkinsons.confidence || 0.85) * 100)}% · Biomarkers: 4-6 Hz tremor, bradykinesia, hypomimia
+                    {typeof assessment.conditions.parkinsons.confidence === 'number' &&
+                      `Evidence coverage: ${Math.round(assessment.conditions.parkinsons.confidence * 100)}% · `}Biomarkers: 4-6 Hz tremor, bradykinesia, hypomimia
                   </div>
                 </div>
 
@@ -335,14 +342,14 @@ export default function Result() {
             <div className="card p-6 border-l-4 border-l-purple-500">
               <div className="flex items-center justify-between">
                 <span className="font-bold text-sm text-ink dark:text-white">🧠 Parkinson's Disease Screening</span>
-                <span className="text-xs text-risk-low font-bold">Standard Range</span>
+                <span className="text-xs muted font-bold">Not scored separately</span>
               </div>
-              <p className="mt-2 text-xs muted">Hand movement, cadence, and vocal stability tracked in normal bounds.</p>
+              <p className="mt-2 text-xs muted">See the movement-pattern result and the per-test scores on this page.</p>
             </div>
           )}
 
           {/* Paralysis / Stroke Card */}
-          {assessment.conditions?.paralysis ? (
+          {typeof assessment.conditions?.paralysis?.score === 'number' ? (
             <div className="card p-6 border-l-4 border-l-rose-500 flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between gap-2">
@@ -358,7 +365,8 @@ export default function Result() {
                     {assessment.conditions.paralysis.score}%
                   </div>
                   <div className="text-xs muted leading-relaxed">
-                    Confidence: {Math.round((assessment.conditions.paralysis.confidence || 0.85) * 100)}% · Biomarkers: Facial droop, hemiparetic gait, motor paresis
+                    {typeof assessment.conditions.paralysis.confidence === 'number' &&
+                      `Evidence coverage: ${Math.round(assessment.conditions.paralysis.confidence * 100)}% · `}Biomarkers: Facial droop, hemiparetic gait, motor paresis
                   </div>
                 </div>
 
@@ -379,9 +387,9 @@ export default function Result() {
             <div className="card p-6 border-l-4 border-l-rose-500">
               <div className="flex items-center justify-between">
                 <span className="font-bold text-sm text-ink dark:text-white">⚡ Paralysis & Stroke Screening</span>
-                <span className="text-xs text-risk-low font-bold">Standard Range</span>
+                <span className="text-xs muted font-bold">Not scored separately</span>
               </div>
-              <p className="mt-2 text-xs muted">Facial symmetry, bilateral step harmony, and motor tone within typical limits.</p>
+              <p className="mt-2 text-xs muted">See the movement-pattern result and the per-test scores on this page.</p>
             </div>
           )}
         </div>

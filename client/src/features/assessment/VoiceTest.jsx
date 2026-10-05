@@ -3,6 +3,8 @@ import TestShell, { CaptureRing } from './TestShell.jsx';
 import { Spinner } from '../../components/ui.jsx';
 import { IconCheck, IconMic } from '../../components/Icons.jsx';
 import { decodeRecording, extractVoiceFeatures, voiceQuality } from '../../lib/audioFeatures.js';
+import { encodeWav } from '../../lib/wav.js';
+import api from '../../api/client.js';
 
 const SENTENCE = 'The quick brown fox jumps over the lazy dog.';
 const SUSTAIN_SEC = 8;
@@ -15,6 +17,7 @@ export default function VoiceTest({ onComplete, onSkip, initial }) {
   const [level, setLevel] = useState(0);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(initial || null);
+  const [mlNote, setMlNote] = useState(null);
 
   const streamRef = useRef(null);
   const recorderRef = useRef(null);
@@ -22,10 +25,16 @@ export default function VoiceTest({ onComplete, onSkip, initial }) {
   const audioCtxRef = useRef(null);
   const rafRef = useRef(null);
   const startedAtRef = useRef(0);
+  // Raw microphone samples for the sustained vowel (sent to the voice model).
+  const pcmRef = useRef([]);
+  const pcmRateRef = useRef(48000);
+  const processorRef = useRef(null);
 
   const teardown = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
+    processorRef.current?.disconnect();
+    processorRef.current = null;
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     audioCtxRef.current?.close().catch(() => {});
@@ -33,6 +42,31 @@ export default function VoiceTest({ onComplete, onSkip, initial }) {
   }, []);
 
   useEffect(() => teardown, [teardown]);
+
+  /**
+   * Sends the sustained vowel to the trained voice model. Optional: if the
+   * model is unavailable or the vowel is unusable, the test still completes on
+   * the on-device measures alone.
+   */
+  const scoreVowel = useCallback(async () => {
+    setMlNote(null);
+    if (!pcmRef.current.length) return null;
+    try {
+      const form = new FormData();
+      form.append('audio', encodeWav(pcmRef.current, pcmRateRef.current), 'vowel.wav');
+      const res = await api.post('/assessments/voice-audio', form);
+      return res.data;
+    } catch (err) {
+      setMlNote(
+        err.status === 400
+          ? `Voice model skipped: ${err.message}`
+          : 'Voice model unavailable right now; scored with on-device measures only.'
+      );
+      return null;
+    } finally {
+      pcmRef.current = [];
+    }
+  }, []);
 
   const analyse = useCallback(
     async (blob) => {
@@ -51,7 +85,8 @@ export default function VoiceTest({ onComplete, onSkip, initial }) {
         }
 
         const quality = voiceQuality(features);
-        const payload = { features, quality, durationSec: features.durationSec };
+        const ml = await scoreVowel();
+        const payload = { features, quality, durationSec: features.durationSec, ml };
         setResult(payload);
         setPhase('done');
         onComplete(payload);
@@ -60,7 +95,7 @@ export default function VoiceTest({ onComplete, onSkip, initial }) {
         setPhase('error');
       }
     },
-    [onComplete]
+    [onComplete, scoreVowel]
   );
 
   const tick = useCallback(() => {
@@ -102,6 +137,19 @@ export default function VoiceTest({ onComplete, onSkip, initial }) {
         if (audioCtxRef.current) requestAnimationFrame(meter);
       };
       meter();
+
+      // Capture uncompressed samples during the sustained-vowel step only.
+      pcmRef.current = [];
+      pcmRateRef.current = ctx.sampleRate;
+      const processor = ctx.createScriptProcessor(4096, 1, 1);
+      processor.onaudioprocess = (e) => {
+        if ((performance.now() - startedAtRef.current) / 1000 < SUSTAIN_SEC) {
+          pcmRef.current.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+        }
+      };
+      source.connect(processor);
+      processor.connect(ctx.destination); // output stays silent; required for the node to run
+      processorRef.current = processor;
 
       chunksRef.current = [];
       const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
@@ -227,6 +275,16 @@ export default function VoiceTest({ onComplete, onSkip, initial }) {
                 <IconCheck className="h-8 w-8" />
               </div>
               <p className="text-sm font-bold text-risk-low">Voice captured</p>
+              {result.ml ? (
+                <p className="text-center text-[11px] muted">
+                  {result.ml.reliable
+                    ? `Voice model: ${Math.round(result.ml.pdLikeness * 100)}% Parkinson's-like pattern ` +
+                      `(flag above ${Math.round(result.ml.threshold * 100)}%). A screening signal, not a diagnosis.`
+                    : 'Voice model not applied: this recording did not resemble its training data.'}
+                </p>
+              ) : (
+                mlNote && <p className="text-center text-[11px] muted">{mlNote}</p>
+              )}
               <dl className="grid w-full grid-cols-2 gap-2 text-center text-[11px]">
                 {[
                   ['Jitter', `${result.features.jitterPercent}%`],
@@ -248,7 +306,8 @@ export default function VoiceTest({ onComplete, onSkip, initial }) {
               </div>
               <p className="text-sm font-bold text-ink dark:text-slate-100">Ready to record</p>
               <p className="text-center text-xs muted">
-                {TOTAL_SEC} seconds total. Nothing is uploaded — the audio is analysed here and discarded.
+                {TOTAL_SEC} seconds total. The {SUSTAIN_SEC}-second “Aaah” is sent to our voice model and is not
+                stored; everything else is analysed on this device.
               </p>
             </>
           )}

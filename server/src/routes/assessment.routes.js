@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as assessment from '../controllers/assessment.controller.js';
 import { downloadAssessmentPDF } from '../controllers/report.controller.js';
 import { analyzeFacePhoto, uploadMiddleware } from '../controllers/facePhoto.controller.js';
+import { analyzeVoiceAudio, audioUploadMiddleware } from '../controllers/voiceAudio.controller.js';
 import { protect } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { submitAssessmentSchema } from '../validators/schemas.js';
@@ -18,6 +19,9 @@ router.delete('/:id', assessment.deleteAssessment);
 
 // Face photo upload — multipart, handled by multer middleware before the controller
 router.post('/face-photo', uploadMiddleware, analyzeFacePhoto);
+
+// Sustained-vowel WAV -> trained voice model. Audio is held in memory only.
+router.post('/voice-audio', audioUploadMiddleware, analyzeVoiceAudio);
 
 export default router;
 

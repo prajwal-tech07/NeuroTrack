@@ -1,9 +1,6 @@
-import os
-import joblib
 import numpy as np
 from typing import Dict, Any, Tuple, List, Optional
-from app.core.config import settings
-from app.core.logging import logger
+from app.services.ml.confidence import coverage_confidence
 from app.services.cv.hand_pipeline import HandPipeline
 from app.services.cv.face_pipeline import FacePipeline
 from app.services.cv.gait_pipeline import GaitPipeline
@@ -12,7 +9,7 @@ from app.services.cv.voice_pipeline import VoicePipeline
 
 class ParalysisClassifier:
     """
-    ML Model for Stroke / Facial Palsy / Hemiparesis Screening.
+    Rule-based Stroke / Facial Palsy / Hemiparesis screening engine.
     Focuses on:
       - Facial Asymmetry & Unilateral Droop (Mouth corner & Eyelid Aperture differential)
       - Hemiparetic Gait Discrepancies (Severe Step Asymmetry & High Double Support)
@@ -20,62 +17,9 @@ class ParalysisClassifier:
       - Dysarthric Speech Characteristics
     """
 
-    MODEL_FILENAME = "paralysis_model.joblib"
-
-    def __init__(self):
-        self.model = None
-        self.scaler = None
-        self._load_model()
-
-    def _load_model(self):
-        path = os.path.join(settings.MODEL_DIR, self.MODEL_FILENAME)
-        if os.path.exists(path):
-            try:
-                bundle = joblib.load(path)
-                self.model = bundle.get("model")
-                self.scaler = bundle.get("scaler")
-                logger.info(f"Loaded trained Paralysis model from {path}")
-            except Exception as e:
-                logger.warning(f"Could not load Paralysis model from {path}: {e}")
-        else:
-            logger.info("Using calibrated probabilistic biomarker engine for Paralysis/Stroke screening.")
-
-    POPULATION_BASELINES = {
-        "face": {
-            "asymmetryIndex": 0.02, "eyeOpenAsymmetry": 0.03, "smileAmplitude": 0.22,
-            "smileAmplitudeLeft": 0.22, "smileAmplitudeRight": 0.22, "browRaiseAmplitude": 0.15,
-            "expressivityIndex": 0.16, "blinkRate": 18.0, "mouthOpenRange": 0.15,
-            "eyeApertureLeft": 0.08, "eyeApertureRight": 0.08
-        },
-        "gait": {
-            "cadenceStepsMin": 112.0, "stepTimeCv": 0.02, "stepSymmetry": 0.03,
-            "armSwingAmplitude": 0.15, "armSwingAsymmetry": 0.08, "trunkSwayIndex": 0.02,
-            "posturalLeanDeg": 4.0, "doubleSupportRatio": 0.22
-        },
-        "hand": {
-            "tapFrequencyHz": 4.5, "tapAmplitudeMean": 0.35, "tapAmplitudeDecay": 0.05,
-            "tapIntervalCv": 0.12, "tapHesitations": 0, "tremorPeakHz": 9.5,
-            "tremorPowerRatio": 0.04, "holdDriftPx": 0.01, "holdJitter": 0.001
-        },
-        "voice": {
-            "jitterPercent": 0.5, "shimmerPercent": 2.0, "hnrDb": 24.0,
-            "f0StdSemitones": 3.2, "pauseRatio": 0.15, "speechRateSyll": 4.8,
-            "maxPhonationSec": 16.0, "intensityCv": 0.15
-        }
-    }
-
-    def extract_full_features(self, modules: Dict[str, Any]) -> np.ndarray:
-        face_feat = modules.get("face", {}).get("features") if modules.get("face") else self.POPULATION_BASELINES["face"]
-        gait_feat = modules.get("gait", {}).get("features") if modules.get("gait") else self.POPULATION_BASELINES["gait"]
-        hand_feat = modules.get("hand", {}).get("features") if modules.get("hand") else self.POPULATION_BASELINES["hand"]
-        voice_feat = modules.get("voice", {}).get("features") if modules.get("voice") else self.POPULATION_BASELINES["voice"]
-
-        x_face = FacePipeline.extract_feature_vector(face_feat or self.POPULATION_BASELINES["face"])
-        x_gait = GaitPipeline.extract_feature_vector(gait_feat or self.POPULATION_BASELINES["gait"])
-        x_hand = HandPipeline.extract_feature_vector(hand_feat or self.POPULATION_BASELINES["hand"])
-        x_voice = VoicePipeline.extract_feature_vector(voice_feat or self.POPULATION_BASELINES["voice"])
-
-        return np.concatenate([x_face, x_gait, x_hand, x_voice]).reshape(1, -1)
+    # Transparent rule-based engine. The model this used to load was trained on
+    # synthetic data and reported a hand-typed accuracy of 0.95.
+    ENGINE = "rule-based"
 
     def predict(self, modules: Dict[str, Any], age: Optional[int] = None) -> Dict[str, Any]:
         face_m = modules.get("face")
@@ -180,31 +124,17 @@ class ParalysisClassifier:
                 "biomarkers": {},
             }
 
-        # If trained ML model exists, use it
-        if self.model is not None and self.scaler is not None:
-            try:
-                X = self.extract_full_features(modules)
-                X_scaled = self.scaler.transform(X)
-                prob_healthy = float(self.model.predict_proba(X_scaled)[0, 1])
-                score = int(np.clip(prob_healthy * 100, 0, 100))
-                confidence = 0.91
-            except Exception as e:
-                logger.error(f"Inference error in Paralysis model: {e}")
-                total_w = sum(weights)
-                score = int(np.clip(sum(s * w for s, w in zip(sub_scores, weights)) / total_w, 0, 100))
-                confidence = 0.85
-        else:
-            total_w = sum(weights)
-            weighted_mean = sum(s * w for s, w in zip(sub_scores, weights)) / total_w
-            
-            # Penalize heavily if acute stroke markers are present
-            if "stroke_facial_asymmetry_detected" in flags:
-                weighted_mean -= 10.0
-            if "stroke_hemiparetic_gait_pattern" in flags:
-                weighted_mean -= 6.0
+        total_w = sum(weights)
+        weighted_mean = sum(s * w for s, w in zip(sub_scores, weights)) / total_w
 
-            score = int(np.clip(weighted_mean, 0, 100))
-            confidence = 0.88
+        # Penalize heavily if acute stroke markers are present
+        if "stroke_facial_asymmetry_detected" in flags:
+            weighted_mean -= 10.0
+        if "stroke_hemiparetic_gait_pattern" in flags:
+            weighted_mean -= 6.0
+
+        score = int(np.clip(weighted_mean, 0, 100))
+        confidence = coverage_confidence(modules, ("face", "gait", "hand", "voice"))
 
         # Determine risk band
         if score >= 80:
@@ -229,4 +159,5 @@ class ParalysisClassifier:
             "flags": list(set(flags)),
             "contributingFactors": contributing_factors,
             "biomarkers": biomarkers,
+            "engine": self.ENGINE,
         }

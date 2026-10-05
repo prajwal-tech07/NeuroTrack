@@ -28,7 +28,39 @@ import {
  *   speechRateSyll     approximate syllables per second
  *   maxPhonationSec    sustained-vowel hold time
  *   intensityCv        loudness coefficient of variation
+ *
+ * Optionally `raw.ml` carries the trained voice model's output for the
+ * sustained vowel (ml-service /score/voice/audio). When that output is marked
+ * reliable it is blended into the module score with ML_WEIGHT.
  */
+/**
+ * Share of the voice score taken from the trained model. Moderate on purpose:
+ * the model is validated on studio recordings (subject-level AUC ~0.81), not
+ * yet on browser microphones.
+ */
+export const ML_WEIGHT = 0.35;
+
+/** Keeps only the model fields we score and store; values are range-checked. */
+function sanitizeMl(ml) {
+  if (!ml || typeof ml !== 'object' || !isNum(ml.pdLikeness)) return null;
+  const v = ml.validation || {};
+  return {
+    pdLikeness: clamp(ml.pdLikeness, 0, 1),
+    threshold: isNum(ml.threshold) ? clamp(ml.threshold, 0, 1) : 0.5,
+    elevated: Boolean(ml.elevated),
+    reliable: ml.reliable === true,
+    distributionDistance: isNum(ml.distributionDistance) ? ml.distributionDistance : null,
+    engine: typeof ml.engine === 'string' ? ml.engine.slice(0, 80) : 'unknown',
+    validation: {
+      auc: isNum(v.auc) ? v.auc : null,
+      balancedAccuracy: isNum(v.balancedAccuracy) ? v.balancedAccuracy : null,
+      sensitivity: isNum(v.sensitivity) ? v.sensitivity : null,
+      specificity: isNum(v.specificity) ? v.specificity : null,
+      trainingSubjects: isNum(v.trainingSubjects) ? v.trainingSubjects : null,
+    },
+  };
+}
+
 export function scoreVoice(raw = {}) {
   const f = raw.features || raw;
   const quality = isNum(raw.quality) ? raw.quality : estimateQuality(f);
@@ -139,9 +171,33 @@ export function scoreVoice(raw = {}) {
     { score: loudness, weight: 0.06 },
   ]);
 
-  const score = clamp(ageAdjust(base, raw.age) * (0.85 + 0.15 * quality));
+  const ruleScore = clamp(ageAdjust(base, raw.age) * (0.85 + 0.15 * quality));
+
+  const ml = sanitizeMl(raw.ml);
+  const useMl = Boolean(ml?.reliable);
+  const mlScore = ml ? 100 * (1 - ml.pdLikeness) : null;
+  const score = useMl ? clamp(ruleScore * (1 - ML_WEIGHT) + mlScore * ML_WEIGHT) : ruleScore;
+
+  if (ml) {
+    indicators.push(
+      indicator({
+        key: 'voiceModel',
+        label: 'Voice model (sustained vowel)',
+        value: Math.round(ml.pdLikeness * 100),
+        unit: '%',
+        score: useMl ? mlScore : null,
+        normal: `< ${Math.round(ml.threshold * 100)}%`,
+        note: useMl
+          ? `Parkinson's-like voice pattern, from a model trained on ${ml.validation.trainingSubjects ?? 'real'} people ` +
+            `(validated AUC ${ml.validation.auc?.toFixed(2) ?? 'n/a'}). A screening signal, not a diagnosis.`
+          : 'Not used: this recording did not resemble the data the model was trained on.',
+      })
+    );
+  }
 
   const flags = [];
+  if (useMl && ml.elevated) flags.push('voice_model_elevated');
+  if (ml && !ml.reliable) flags.push('voice_model_out_of_distribution');
   if (isNum(jitter) && jitter < 45) flags.push('voice_jitter_elevated');
   if (isNum(prosody) && prosody < 45) flags.push('voice_monotone');
   if (isNum(hnr) && hnr < 45) flags.push('voice_breathiness');
@@ -154,6 +210,7 @@ export function scoreVoice(raw = {}) {
     indicators,
     durationSec: f.durationSec || 0,
     flags,
+    ml: ml ? { ...ml, used: useMl, weight: useMl ? ML_WEIGHT : 0, ruleScore: Math.round(ruleScore) } : null,
   };
 }
 

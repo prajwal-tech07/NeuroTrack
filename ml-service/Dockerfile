@@ -13,8 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Pre-train baseline models if not present
-RUN python scripts/train_baseline.py
+# Trained models are committed under app/models (voice_pd_model.joblib is
+# produced by scripts/train_voice_model.py from public datasets).
 
 EXPOSE 8000
 

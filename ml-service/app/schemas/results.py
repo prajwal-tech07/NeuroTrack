@@ -28,10 +28,11 @@ class ConditionResult(BaseModel):
     score: int = Field(..., ge=0, le=100)
     riskLevel: str  # "low", "mild", "moderate", "high"
     riskLabel: str  # "Low Risk", "Mild Risk", etc.
-    confidence: float = 0.85
+    confidence: float = 0.0
     flags: List[str] = Field(default_factory=list)
     contributingFactors: List[str] = Field(default_factory=list)
     biomarkers: Dict[str, Any] = Field(default_factory=dict)
+    engine: str = "rule-based"
 
 
 class DualConditionAssessmentResult(BaseModel):

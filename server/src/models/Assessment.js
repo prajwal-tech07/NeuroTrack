@@ -15,6 +15,8 @@ const moduleResultSchema = new mongoose.Schema(
     /** Data-quality 0..1 — low quality down-weights the module in fusion. */
     quality: { type: Number, min: 0, max: 1, default: 1 },
     durationSec: { type: Number, default: 0 },
+    /** Trained-model output for this module, when one ran (currently voice only). */
+    ml: { type: mongoose.Schema.Types.Mixed, default: null },
   },
   { _id: false }
 );
@@ -89,7 +91,7 @@ const assessmentSchema = new mongoose.Schema(
         score: { type: Number, min: 0, max: 100 },
         riskLevel: { type: String, enum: ['low', 'mild', 'moderate', 'high'] },
         riskLabel: { type: String },
-        confidence: { type: Number, default: 0.85 },
+        confidence: { type: Number, min: 0, max: 1 },
         flags: { type: [String], default: [] },
         contributingFactors: { type: [String], default: [] },
         biomarkers: { type: mongoose.Schema.Types.Mixed, default: {} },
@@ -98,14 +100,15 @@ const assessmentSchema = new mongoose.Schema(
         score: { type: Number, min: 0, max: 100 },
         riskLevel: { type: String, enum: ['low', 'mild', 'moderate', 'high'] },
         riskLabel: { type: String },
-        confidence: { type: Number, default: 0.85 },
+        confidence: { type: Number, min: 0, max: 1 },
         flags: { type: [String], default: [] },
         contributingFactors: { type: [String], default: [] },
         biomarkers: { type: mongoose.Schema.Types.Mixed, default: {} },
       },
     },
 
-    scoringEngine: { type: String, default: 'ml-v1' },
+    /** 'rules-v1' = clinical heuristics only; 'rules+voice-ml-v1' = voice score also used the trained voice model. */
+    scoringEngine: { type: String, default: 'rules-v1' },
 
     recommendations: {
       type: [
@@ -131,7 +134,9 @@ assessmentSchema.index({ user: 1, completedAt: -1 });
 
 assessmentSchema.methods.toPublic = function () {
   const mod = (m) =>
-    m ? { score: m.score, completed: m.completed, indicators: m.indicators, quality: m.quality } : null;
+    m
+      ? { score: m.score, completed: m.completed, indicators: m.indicators, quality: m.quality, ml: m.ml || null }
+      : null;
 
   return {
     id: this._id.toString(),
