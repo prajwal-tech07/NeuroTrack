@@ -4,6 +4,7 @@ import ApiError, { asyncHandler } from '../utils/ApiError.js';
 import { analyzeAssessment, MODULE_KEYS } from '../services/scoring/fusion.js';
 import { buildRecommendations } from '../services/recommendations.js';
 import { regenerateMonthlyReport } from '../services/reports.js';
+import { recordIfConsented } from '../services/research.js';
 
 const addDays = (d, n) => new Date(d.getTime() + n * 86400000);
 
@@ -37,17 +38,20 @@ export const submitAssessment = asyncHandler(async (req, res) => {
     riskLevel: analysis.riskLevel,
     riskLabel: analysis.riskLabel,
     conditions: analysis.conditions || null,
-    scoringEngine: analysis.scoringEngine || 'ml-v1',
+    scoringEngine: analysis.scoringEngine,
     delta,
     recommendations,
     flags: analysis.flags,
-    engineVersion: analysis.engineVersion || '2.0.0',
+    engineVersion: analysis.engineVersion,
     completedAt: new Date(),
   });
 
   req.user.lastAssessmentAt = doc.completedAt;
   req.user.nextAssessmentAt = addDays(doc.completedAt, env.assessmentIntervalDays);
   await req.user.save({ validateBeforeSave: false });
+
+  // Opted-in users donate the measured features (never media) for validation.
+  await recordIfConsented(req.user, modules, analysis);
 
   // Keep the month's report in sync so the Reports page is never stale.
   await regenerateMonthlyReport(req.user._id, doc.completedAt);

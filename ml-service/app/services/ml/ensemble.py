@@ -160,7 +160,7 @@ class MultiModelEnsemble:
             riskLevel=risk_level,
             riskLabel=risk_label,
             riskTone=risk_tone,
-            scoringEngine="ml-v1",
+            scoringEngine="rule-based-v2",
             engineVersion="2.0.0",
             completedModules=completed_keys,
             flags=list(set(all_flags)),

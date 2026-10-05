@@ -95,6 +95,7 @@ export function analyzeAssessment({ modules = {}, age } = {}) {
     riskTone: risk.tone,
     completedModules: completed,
     flags: [...new Set(flags)],
+    scoringEngine: results.voice?.ml ? 'rules+voice-ml-v1' : 'rules-v1',
     engineVersion: ENGINE_VERSION,
   };
 }

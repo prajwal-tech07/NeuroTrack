@@ -41,6 +41,97 @@ function Section({ title, children }) {
   );
 }
 
+const DIAGNOSES = [
+  { value: 'prefer_not_to_say', label: 'Prefer not to say' },
+  { value: 'none', label: 'No neurological diagnosis' },
+  { value: 'parkinsons', label: "Diagnosed with Parkinson's" },
+  { value: 'stroke', label: 'Had a stroke / facial palsy' },
+  { value: 'other', label: 'Another neurological condition' },
+];
+
+/**
+ * Opt-in donation of measured features (never video or audio) so the models'
+ * real-world accuracy can be measured. Opting out deletes donated samples.
+ */
+function ResearchSection({ user, patchUser, toast }) {
+  const [research, setResearch] = useState(user?.research || { consented: false, diagnosis: 'prefer_not_to_say' });
+  const [samples, setSamples] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api
+      .get('/users/research')
+      .then((res) => {
+        setResearch(res.data.research);
+        setSamples(res.data.samples);
+      })
+      .catch(() => {});
+  }, []);
+
+  const save = async (patch) => {
+    if (patch.consented === false && research.consented) {
+      const ok = window.confirm('Stop contributing and permanently delete the samples you have donated?');
+      if (!ok) return;
+    }
+    setBusy(true);
+    try {
+      const res = await api.patch('/users/research', { consented: research.consented, ...patch });
+      setResearch(res.data.research);
+      setSamples(res.data.samples);
+      patchUser({ research: res.data.research });
+      toast.success(res.message);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Section title="Help improve accuracy">
+      <p className="mt-2 text-xs leading-relaxed muted">
+        Our face and hand checks have not yet been validated on real patients, and the voice model has not been
+        tested on home microphones. If you agree, each assessment you complete also stores a{' '}
+        <strong>pseudonymous copy of the measured numbers</strong> (for example blink rate or tapping speed), your age
+        range, gender and the diagnosis you choose below. It contains <strong>no video, no audio, no name and no email</strong>.
+        It is used only to measure and improve the accuracy of these checks. You can stop at any time, and stopping
+        deletes everything you donated.
+      </p>
+      <Row
+        label="Contribute my measurements"
+        description={
+          research.consented
+            ? `Contributing${samples != null ? ` · ${samples} sample${samples === 1 ? '' : 's'} donated` : ''}`
+            : 'Off. Nothing is shared.'
+        }
+      >
+        <Toggle
+          checked={Boolean(research.consented)}
+          onChange={(v) => save({ consented: v })}
+          label="Contribute measurements for research"
+        />
+      </Row>
+      <Row
+        label="Diagnosis (self-reported)"
+        description="Used as the label the checks are evaluated against. Only stored with your donated samples."
+      >
+        <select
+          className="input !w-auto !py-2 text-sm"
+          value={research.diagnosis || 'prefer_not_to_say'}
+          disabled={busy}
+          onChange={(e) => save({ diagnosis: e.target.value })}
+        >
+          {DIAGNOSES.map((d) => (
+            <option key={d.value} value={d.value}>
+              {d.label}
+            </option>
+          ))}
+        </select>
+      </Row>
+    </Section>
+  );
+}
+
 export default function Settings() {
   const { user, patchUser, logout } = useAuth();
   const { setTheme } = useTheme();
@@ -192,6 +283,8 @@ export default function Settings() {
           </select>
         </Row>
       </Section>
+
+      <ResearchSection user={user} patchUser={patchUser} toast={toast} />
 
       <Section title="Account">
         <Row label="Sign out" description="End this session on this device.">

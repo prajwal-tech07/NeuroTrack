@@ -32,6 +32,18 @@ const userSchema = new mongoose.Schema(
 
     settings: { type: settingsSchema, default: () => ({}) },
 
+    /** Opt-in donation of assessment features for model validation (services/research.js). */
+    research: {
+      consented: { type: Boolean, default: false },
+      consentVersion: { type: String, default: null },
+      consentedAt: { type: Date, default: null },
+      diagnosis: {
+        type: String,
+        enum: ['none', 'parkinsons', 'stroke', 'other', 'prefer_not_to_say'],
+        default: 'prefer_not_to_say',
+      },
+    },
+
     // Assessment scheduling
     lastAssessmentAt: { type: Date, default: null },
     nextAssessmentAt: { type: Date, default: null },
@@ -75,6 +87,12 @@ userSchema.methods.toPublic = function () {
     phone: this.phone ?? null,
     initials: this.initials,
     settings: this.settings,
+    research: {
+      consented: Boolean(this.research?.consented),
+      consentVersion: this.research?.consentVersion ?? null,
+      consentedAt: this.research?.consentedAt ?? null,
+      diagnosis: this.research?.diagnosis ?? 'prefer_not_to_say',
+    },
     lastAssessmentAt: this.lastAssessmentAt,
     nextAssessmentAt: this.nextAssessmentAt,
     createdAt: this.createdAt,

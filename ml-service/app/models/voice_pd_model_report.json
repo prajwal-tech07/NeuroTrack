@@ -1,0 +1,87 @@
+{
+  "calibration": [
+    0.8499665157129332,
+    -0.36003263534504776
+  ],
+  "threshold": 0.505,
+  "ood_threshold": 2.115,
+  "feature_names": [
+    "meanPeriodPulses",
+    "locShimmer",
+    "locDbShimmer",
+    "apq3Shimmer",
+    "apq5Shimmer",
+    "apq11Shimmer",
+    "ddaShimmer",
+    "meanAutoCorrHarmonicity",
+    "meanHarmToNoiseHarmonicity",
+    "f1",
+    "f2",
+    "f3",
+    "f4",
+    "male"
+  ],
+  "engine": "voice-pd-xgboost-sakar2018-v1",
+  "metrics": {
+    "subject_cv": {
+      "auc": 0.8198720079787233,
+      "balanced_accuracy": 0.7392619680851065,
+      "accuracy": 0.7416666666666667,
+      "sensitivity": 0.7441489361702128,
+      "specificity": 0.734375,
+      "std": {
+        "auc": 0.014503744531779014,
+        "balanced_accuracy": 0.01686839168597666
+      },
+      "auc_95ci": [
+        0.7691991017823673,
+        0.8878135806415954
+      ],
+      "balanced_accuracy_95ci": [
+        0.6930399125253912,
+        0.8122729705544675
+      ],
+      "majority_baseline_accuracy": 0.746031746031746,
+      "method": "5-fold subject-grouped CV x 10 repeats, 252 subjects (Sakar 2018)"
+    },
+    "n_subjects": 252,
+    "n_recordings": 756,
+    "selection": {
+      "logreg": [
+        0.7687084441489361,
+        0.016829594324608416
+      ],
+      "xgboost": [
+        0.8207529920212766,
+        0.014923031871529687
+      ],
+      "blend": [
+        0.806466090425532,
+        0.014831291977345212
+      ]
+    },
+    "external_figshare": {
+      "auc": 0.44146341463414634,
+      "balanced_accuracy": 0.4326219512195122,
+      "accuracy": 0.43209876543209874,
+      "sensitivity": 0.475,
+      "specificity": 0.3902439024390244,
+      "majority_baseline_accuracy": 0.5061728395061729,
+      "n_subjects": 81,
+      "n_pd": 40,
+      "n_healthy": 41,
+      "auc_95ci": [
+        0.31644494966141307,
+        0.5673764016481272
+      ],
+      "balanced_accuracy_95ci": [
+        0.32696706830600675,
+        0.5413185944512443
+      ],
+      "age_only_auc": 0.8640243902439024,
+      "fraction_flagged_out_of_distribution": 0.0,
+      "note": "8 kHz telephone-band audio vs 44.1 kHz training data; controls are much younger than patients. A lower bound on transfer, not a clean estimate."
+    }
+  },
+  "trained_at": "2026-10-05T17:58:13.527881+00:00"
+}

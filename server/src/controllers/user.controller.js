@@ -1,6 +1,7 @@
 import User from '../models/User.js';
 import Assessment from '../models/Assessment.js';
 import Report from '../models/Report.js';
+import { CONSENT_VERSION, countParticipantSamples, deleteParticipantData } from '../services/research.js';
 import ApiError, { asyncHandler } from '../utils/ApiError.js';
 
 export const getProfile = asyncHandler(async (req, res) => {
@@ -56,8 +57,44 @@ export const updateSettings = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Settings saved', data: { settings: req.user.settings } });
 });
 
+/**
+ * Opt in/out of donating assessment features. Opting out deletes every sample
+ * already donated, so withdrawal is complete, not just "stop collecting".
+ */
+export const updateResearch = asyncHandler(async (req, res) => {
+  const { consented, diagnosis } = req.body;
+  const r = req.user.research || {};
+  let deleted = 0;
+  if (consented && !r.consented) {
+    r.consentVersion = CONSENT_VERSION;
+    r.consentedAt = new Date();
+  }
+  if (!consented && r.consented) {
+    deleted = await deleteParticipantData(req.user._id);
+    r.consentVersion = null;
+    r.consentedAt = null;
+  }
+  r.consented = consented;
+  if (diagnosis) r.diagnosis = diagnosis;
+  req.user.research = r;
+  await req.user.save({ validateBeforeSave: false });
+  res.json({
+    success: true,
+    message: consented ? 'Thank you for contributing' : `Withdrawn; ${deleted} donated sample(s) deleted`,
+    data: { research: req.user.toPublic().research, samples: await countParticipantSamples(req.user._id) },
+  });
+});
+
+export const getResearch = asyncHandler(async (req, res) => {
+  res.json({
+    success: true,
+    data: { research: req.user.toPublic().research, samples: await countParticipantSamples(req.user._id) },
+  });
+});
+
 export const deleteAccount = asyncHandler(async (req, res) => {
   await Promise.all([
+    deleteParticipantData(req.user._id),
     Assessment.deleteMany({ user: req.user._id }),
     Report.deleteMany({ user: req.user._id }),
     User.findByIdAndDelete(req.user._id),
