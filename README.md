@@ -313,6 +313,22 @@ The other ML-service classifiers (Parkinson's, paralysis) are transparent rule e
 "confidence" is the share of relevant tests completed, weighted by recording quality. It is not an
 accuracy. The face-photo model is trained on synthetic data and is labelled as such.
 
+## Gait rules measured on real walking data
+
+`ml-service/scripts/evaluate_gait_rules.py` checks the app's gait rules (`gait.js`, unchanged) against
+PhysioNet's *Gait in Parkinson's Disease* database: 165 people (93 with Parkinson's, 72 controls),
+with timing taken from foot-pressure sensors. Every evaluation keeps each person entirely in train or
+entirely in test:
+
+| | AUC | Balanced accuracy |
+|---|---|---|
+| Current gait rules | 0.74 | 0.60. At the app's "score below 80" cutoff they flag 30% of patients and 10% of controls |
+| Logistic regression on the same 4 timing features | 0.84 | 0.77 |
+
+The rules point the right way but are too lenient. Double-support time is the strongest single signal
+(AUC 0.79). These are upper bounds, because the app would estimate gait timing from a webcam, not
+force plates. The gait test is currently not part of the assessment flow.
+
 ## Research data (opt-in)
 
 The face and hand checks have no real-patient validation yet, and the voice model has not been
