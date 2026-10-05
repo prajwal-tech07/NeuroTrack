@@ -9,7 +9,8 @@
     "start": "node src/index.js",
     "seed": "node scripts/seed.js",
     "validate": "node scripts/validate.js",
-    "test": "node --test"
+    "test": "node --test",
+    "research:export": "node scripts/export-research.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

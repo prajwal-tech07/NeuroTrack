@@ -313,6 +313,26 @@ The other ML-service classifiers (Parkinson's, paralysis) are transparent rule e
 "confidence" is the share of relevant tests completed, weighted by recording quality. It is not an
 accuracy. The face-photo model is trained on synthetic data and is labelled as such.
 
+## Research data (opt-in)
+
+The face and hand checks have no real-patient validation yet, and the voice model has not been
+tested on home microphones. Real accuracy figures can only come from real users, so
+**Settings → Help improve accuracy** lets a user opt in to donating their measurements.
+
+- **What is stored:** the numeric features of each assessment, a 5-year age band, gender and a
+  self-reported diagnosis. No video, audio, name, email or user id is stored. Samples are linked by an
+  HMAC pseudonym (`RESEARCH_SECRET`), so one person's samples can be grouped and deleted.
+- **Opting out, or deleting the account,** permanently deletes every donated sample.
+- **Evaluate:**
+
+  ```bash
+  npm --prefix server run research:export              # -> ml-service/data/research/samples.jsonl
+  python ml-service/scripts/evaluate_research_data.py  # subject-grouped CV per test
+  ```
+
+  The evaluator reports nothing until each class has at least 20 participants. Labels are
+  self-reported, so confirm against clinician diagnoses before quoting any result.
+
 ## Configuration
 
 Everything lives in `server/.env` (see `server/.env.example`). The only value you must set for local

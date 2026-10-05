@@ -28,6 +28,9 @@ export const env = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '15m',
   jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
 
+  /** Keys the pseudonymous research participant ids. Changing it orphans existing samples. */
+  researchSecret: required('RESEARCH_SECRET', 'dev_only_research_secret_change_me'),
+
   assessmentIntervalDays: Number(process.env.ASSESSMENT_INTERVAL_DAYS || 7),
 
   smtp: {

@@ -4,6 +4,7 @@ import { protect } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import {
   changePasswordSchema,
+  researchSchema,
   settingsSchema,
   updateProfileSchema,
 } from '../validators/schemas.js';
@@ -17,6 +18,9 @@ router.post('/change-password', validate(changePasswordSchema), user.changePassw
 
 router.get('/settings', user.getSettings);
 router.patch('/settings', validate(settingsSchema), user.updateSettings);
+
+router.get('/research', user.getResearch);
+router.patch('/research', validate(researchSchema), user.updateResearch);
 
 router.get('/export', user.exportData);
 router.delete('/account', user.deleteAccount);

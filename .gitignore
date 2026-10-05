@@ -19,3 +19,4 @@ __pycache__/
 
 # Downloaded public datasets (re-fetch with ml-service/scripts/download_voice_data.py)
 ml-service/data/raw/
+ml-service/data/research/

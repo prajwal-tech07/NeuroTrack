@@ -55,6 +55,11 @@ export const settingsSchema = z.object({
   timeFormat: z.enum(['12h', '24h']).optional(),
 });
 
+export const researchSchema = z.object({
+  consented: z.boolean(),
+  diagnosis: z.enum(['none', 'parkinsons', 'stroke', 'other', 'prefer_not_to_say']).optional(),
+});
+
 /** A module payload: browser-extracted features + optional self-reported quality. */
 const moduleSchema = z
   .object({
