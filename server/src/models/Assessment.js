@@ -84,6 +84,29 @@ const assessmentSchema = new mongoose.Schema(
     /** Change vs. the previous assessment, in points. */
     delta: { type: Number, default: null },
 
+    conditions: {
+      parkinsons: {
+        score: { type: Number, min: 0, max: 100 },
+        riskLevel: { type: String, enum: ['low', 'mild', 'moderate', 'high'] },
+        riskLabel: { type: String },
+        confidence: { type: Number, default: 0.85 },
+        flags: { type: [String], default: [] },
+        contributingFactors: { type: [String], default: [] },
+        biomarkers: { type: mongoose.Schema.Types.Mixed, default: {} },
+      },
+      paralysis: {
+        score: { type: Number, min: 0, max: 100 },
+        riskLevel: { type: String, enum: ['low', 'mild', 'moderate', 'high'] },
+        riskLabel: { type: String },
+        confidence: { type: Number, default: 0.85 },
+        flags: { type: [String], default: [] },
+        contributingFactors: { type: [String], default: [] },
+        biomarkers: { type: mongoose.Schema.Types.Mixed, default: {} },
+      },
+    },
+
+    scoringEngine: { type: String, default: 'ml-v1' },
+
     recommendations: {
       type: [
         {
@@ -98,7 +121,7 @@ const assessmentSchema = new mongoose.Schema(
     },
 
     flags: { type: [String], default: [] },
-    engineVersion: { type: String, default: '1.0.0' },
+    engineVersion: { type: String, default: '2.0.0' },
     completedAt: { type: Date, default: Date.now, index: true },
   },
   { timestamps: true }
@@ -121,6 +144,8 @@ assessmentSchema.methods.toPublic = function () {
     overallScore: this.overallScore,
     riskLevel: this.riskLevel,
     riskLabel: this.riskLabel,
+    conditions: this.conditions || null,
+    scoringEngine: this.scoringEngine || 'legacy-rules',
     delta: this.delta,
     recommendations: this.recommendations,
     flags: this.flags,

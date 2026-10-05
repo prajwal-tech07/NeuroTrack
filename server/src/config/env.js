@@ -41,6 +41,7 @@ export const env = {
 
   reminderCron: process.env.REMINDER_CRON || '0 9 * * 1',
   enableCron: String(process.env.ENABLE_CRON || 'true') === 'true',
+  mlServiceUrl: process.env.ML_SERVICE_URL || 'http://127.0.0.1:8000/api/v1',
 };
 
 export default env;

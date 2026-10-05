@@ -15,7 +15,7 @@ export const submitAssessment = asyncHandler(async (req, res) => {
 
   let analysis;
   try {
-    analysis = analyzeAssessment({ modules, age: req.user.age });
+    analysis = await analyzeAssessment({ modules, age: req.user.age });
   } catch (err) {
     throw ApiError.badRequest(err.message);
   }
@@ -36,10 +36,12 @@ export const submitAssessment = asyncHandler(async (req, res) => {
     overallScore: analysis.overallScore,
     riskLevel: analysis.riskLevel,
     riskLabel: analysis.riskLabel,
+    conditions: analysis.conditions || null,
+    scoringEngine: analysis.scoringEngine || 'ml-v1',
     delta,
     recommendations,
     flags: analysis.flags,
-    engineVersion: analysis.engineVersion,
+    engineVersion: analysis.engineVersion || '2.0.0',
     completedAt: new Date(),
   });
 

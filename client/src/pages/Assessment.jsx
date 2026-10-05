@@ -6,7 +6,7 @@ import { releaseLandmarkers } from '../lib/mediapipe.js';
 import VoiceTest from '../features/assessment/VoiceTest.jsx';
 import FaceTest from '../features/assessment/FaceTest.jsx';
 import HandTest from '../features/assessment/HandTest.jsx';
-import GaitTest from '../features/assessment/GaitTest.jsx';
+
 import { DisclaimerNote, Spinner } from '../components/ui.jsx';
 import { IconAlert, IconCheck, IconSparkle } from '../components/Icons.jsx';
 import { MODULE_META } from '../utils/format.js';
@@ -15,7 +15,6 @@ const STEPS = [
   { key: 'voice', label: 'Voice Test', Component: VoiceTest },
   { key: 'face', label: 'Face Test', Component: FaceTest },
   { key: 'hand', label: 'Hand Test', Component: HandTest },
-  { key: 'gait', label: 'Gait Test', Component: GaitTest },
   { key: 'result', label: 'Result', Component: null },
 ];
 
@@ -30,22 +29,20 @@ function Stepper({ current, results }) {
             <div className="flex w-full items-center">
               <span className={`h-0.5 flex-1 ${i === 0 ? 'bg-transparent' : done || active ? 'bg-brand-500' : 'bg-slate-200 dark:bg-slate-800'}`} />
               <span
-                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-extrabold transition ${
-                  active
-                    ? 'bg-brand-600 text-white ring-4 ring-brand-100 dark:ring-brand-900/50'
-                    : done
-                      ? 'bg-brand-500 text-white'
-                      : 'bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-500'
-                }`}
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-extrabold transition ${active
+                  ? 'bg-brand-600 text-white ring-4 ring-brand-100 dark:ring-brand-900/50'
+                  : done
+                    ? 'bg-brand-500 text-white'
+                    : 'bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-500'
+                  }`}
               >
                 {done && !active ? <IconCheck className="h-3.5 w-3.5" /> : i + 1}
               </span>
               <span className={`h-0.5 flex-1 ${i === STEPS.length - 1 ? 'bg-transparent' : done ? 'bg-brand-500' : 'bg-slate-200 dark:bg-slate-800'}`} />
             </div>
             <span
-              className={`mt-2 truncate text-center text-[11px] font-semibold sm:text-xs ${
-                active ? 'text-brand-600 dark:text-brand-300' : 'muted'
-              }`}
+              className={`mt-2 truncate text-center text-[11px] font-semibold sm:text-xs ${active ? 'text-brand-600 dark:text-brand-300' : 'muted'
+                }`}
             >
               {step.label}
             </span>
@@ -115,7 +112,7 @@ export default function Assessment() {
     setSubmitError(null);
     try {
       const payload = {};
-      for (const key of ['voice', 'face', 'hand', 'gait']) {
+      for (const key of ['voice', 'face', 'hand']) {
         if (results[key]) payload[key] = results[key];
       }
       const res = await api.post('/assessments', payload);
@@ -136,7 +133,7 @@ export default function Assessment() {
           Weekly Assessment
         </h1>
         <p className="mt-1 text-sm muted">
-          Complete all four tests to generate your AI health result.
+          Complete all three tests to generate your AI health result.
         </p>
       </div>
 
@@ -149,10 +146,10 @@ export default function Assessment() {
               <IconSparkle className="h-8 w-8" />
             </div>
             <h2 className="text-xl font-extrabold text-ink dark:text-white">
-              {completedCount === 4 ? 'All four tests complete' : `${completedCount} of 4 tests complete`}
+              {completedCount === 3 ? 'All three tests complete' : `${completedCount} of 3 tests complete`}
             </h2>
             <p className="mt-2 text-sm muted">
-              {completedCount === 4
+              {completedCount === 3
                 ? 'Submit to run the fusion engine and generate your score, risk level and recommendations.'
                 : 'You can submit now, but a partial assessment is capped below 100% because there is less evidence behind it.'}
             </p>

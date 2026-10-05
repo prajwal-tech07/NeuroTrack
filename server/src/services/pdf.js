@@ -350,7 +350,31 @@ export function buildAssessmentPDF(user, assessment) {
     assessment.delta === null ? INK : assessment.delta >= 0 ? RISK_COLORS.low : RISK_COLORS.high,
     'vs previous assessment'
   );
-  y += 74 + 24;
+  y += 74 + 20;
+
+  // Dual Condition Section in PDF
+  if (assessment.conditions?.parkinsons || assessment.conditions?.paralysis) {
+    doc.fillColor(INK).fontSize(12).font('Helvetica-Bold').text('Targeted Condition Screening', 50, y);
+    y += 18;
+
+    const condW = (495 - 15) / 2;
+    if (assessment.conditions?.parkinsons) {
+      const pd = assessment.conditions.parkinsons;
+      const pdColor = RISK_COLORS[pd.riskLevel] || BRAND;
+      doc.roundedRect(50, y, condW, 46, 6).strokeColor(LINE).lineWidth(1).stroke();
+      doc.fillColor(INK).fontSize(8.5).font('Helvetica-Bold').text('Parkinson’s Risk', 60, y + 8);
+      doc.fillColor(pdColor).fontSize(13).font('Helvetica-Bold').text(`${pd.score}% (${pd.riskLabel})`, 60, y + 22);
+    }
+
+    if (assessment.conditions?.paralysis) {
+      const para = assessment.conditions.paralysis;
+      const paraColor = RISK_COLORS[para.riskLevel] || '#DC2626';
+      doc.roundedRect(50 + condW + 15, y, condW, 46, 6).strokeColor(LINE).lineWidth(1).stroke();
+      doc.fillColor(INK).fontSize(8.5).font('Helvetica-Bold').text('Paralysis & Stroke Risk', 60 + condW + 15, y + 8);
+      doc.fillColor(paraColor).fontSize(13).font('Helvetica-Bold').text(`${para.score}% (${para.riskLabel})`, 60 + condW + 15, y + 22);
+    }
+    y += 46 + 18;
+  }
 
   y = patternBlock(doc, y, assessment.pattern, assessment.laterality);
 

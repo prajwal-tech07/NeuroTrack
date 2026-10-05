@@ -122,23 +122,32 @@ const RULES = [
       'exaggerated vowel shapes held for 5 seconds each — help maintain range of motion.',
   },
   {
-    when: (a) => a.flags.includes('face_asymmetry'),
+    when: (a) => a.flags.includes('stroke_facial_asymmetry_detected') || a.flags.includes('face_asymmetry'),
     priority: 'high',
     category: 'face',
-    title: 'Left/right facial asymmetry detected',
+    title: 'Facial droop / asymmetry detected (Stroke / Palsy Marker)',
     detail:
-      'Movement differed noticeably between the two sides of your face. Asymmetry that appears suddenly ' +
-      'is worth same-day medical review; if it has been present for a long time and is stable, mention ' +
-      'it at your next appointment.',
+      'Notable left/right disparity was measured in smile corner elevation or eyelid aperture. ' +
+      'Sudden onset of facial drooping is a FAST stroke emergency sign — seek immediate medical attention. ' +
+      'If chronic or gradual, request a neurological consultation for Bell’s palsy or cranial nerve evaluation.',
   },
   {
-    when: (a) => a.flags.includes('gait_high_variability'),
-    priority: 'medium',
+    when: (a) => a.flags.includes('stroke_hemiparetic_gait_pattern') || a.flags.includes('gait_asymmetry_severe'),
+    priority: 'high',
     category: 'gait',
-    title: 'Step timing was irregular',
+    title: 'Asymmetrical / hemiparetic gait pattern detected',
     detail:
-      'Step-to-step timing varied more than expected. Walking to a metronome or a steady music beat at ' +
-      '110 bpm is an effective way to retrain rhythm, and it also reduces fall risk.',
+      'Gait kinematics indicate significant step duration imbalance or elevated double-support time. ' +
+      'Physical therapy gait retraining and clinical motor evaluation are recommended to prevent fall risks.',
+  },
+  {
+    when: (a) => a.flags.includes('hand_severe_weakness'),
+    priority: 'high',
+    category: 'hand',
+    title: 'Unilateral fine-motor weakness detected',
+    detail:
+      'Fine-motor tap velocity and amplitude were severely reduced without rhythmic tremor, pointing towards motor paresis. ' +
+      'A physician review is advised to assess upper-limb motor pathway integrity.',
   },
   {
     when: (a) => a.flags.includes('hand_bradykinesia'),

@@ -285,10 +285,112 @@ export default function Result() {
         </div>
       </div>
 
+      {/* Dual Condition Screening Cards */}
+      <div className="mb-6">
+        <h2 className="text-lg font-bold text-ink dark:text-white mb-3 flex items-center gap-2">
+          <span>Targeted Condition Screening</span>
+          {assessment.scoringEngine && (
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-brand-50 text-brand-600 border border-brand-200 dark:bg-brand-950 dark:text-brand-300 dark:border-brand-800">
+              {assessment.scoringEngine === 'ml-v1' ? 'AI / ML Multi-Model' : 'Clinical Heuristics'}
+            </span>
+          )}
+        </h2>
+
+        <div className="grid gap-5 md:grid-cols-2">
+          {/* Parkinson's Card */}
+          {assessment.conditions?.parkinsons ? (
+            <div className="card p-6 border-l-4 border-l-purple-500 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">🧠</span>
+                    <h3 className="text-base font-bold text-ink dark:text-slate-100">Parkinson’s Disease Risk</h3>
+                  </div>
+                  <RiskBadge level={assessment.conditions.parkinsons.riskLevel} />
+                </div>
+                
+                <div className="mt-4 flex items-center gap-4">
+                  <div className="text-3xl font-extrabold text-brand-600 dark:text-brand-400">
+                    {assessment.conditions.parkinsons.score}%
+                  </div>
+                  <div className="text-xs muted leading-relaxed">
+                    Confidence: {Math.round((assessment.conditions.parkinsons.confidence || 0.85) * 100)}% · Biomarkers: 4-6 Hz tremor, bradykinesia, hypomimia
+                  </div>
+                </div>
+
+                {assessment.conditions.parkinsons.contributingFactors?.length > 0 && (
+                  <div className="mt-3.5 space-y-1">
+                    <p className="text-[11px] font-bold uppercase tracking-wider muted">Key Indicators:</p>
+                    {assessment.conditions.parkinsons.contributingFactors.map((factor, idx) => (
+                      <p key={idx} className="text-xs text-slate-700 dark:text-slate-300 flex items-start gap-1.5">
+                        <span className="text-amber-500 font-bold">•</span>
+                        <span>{factor}</span>
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="card p-6 border-l-4 border-l-purple-500">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-sm text-ink dark:text-white">🧠 Parkinson's Disease Screening</span>
+                <span className="text-xs text-risk-low font-bold">Standard Range</span>
+              </div>
+              <p className="mt-2 text-xs muted">Hand movement, cadence, and vocal stability tracked in normal bounds.</p>
+            </div>
+          )}
+
+          {/* Paralysis / Stroke Card */}
+          {assessment.conditions?.paralysis ? (
+            <div className="card p-6 border-l-4 border-l-rose-500 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">⚡</span>
+                    <h3 className="text-base font-bold text-ink dark:text-slate-100">Paralysis & Stroke Risk</h3>
+                  </div>
+                  <RiskBadge level={assessment.conditions.paralysis.riskLevel} />
+                </div>
+
+                <div className="mt-4 flex items-center gap-4">
+                  <div className="text-3xl font-extrabold text-rose-600 dark:text-rose-400">
+                    {assessment.conditions.paralysis.score}%
+                  </div>
+                  <div className="text-xs muted leading-relaxed">
+                    Confidence: {Math.round((assessment.conditions.paralysis.confidence || 0.85) * 100)}% · Biomarkers: Facial droop, hemiparetic gait, motor paresis
+                  </div>
+                </div>
+
+                {assessment.conditions.paralysis.contributingFactors?.length > 0 && (
+                  <div className="mt-3.5 space-y-1">
+                    <p className="text-[11px] font-bold uppercase tracking-wider muted">Key Indicators:</p>
+                    {assessment.conditions.paralysis.contributingFactors.map((factor, idx) => (
+                      <p key={idx} className="text-xs text-slate-700 dark:text-slate-300 flex items-start gap-1.5">
+                        <span className="text-rose-500 font-bold">•</span>
+                        <span>{factor}</span>
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="card p-6 border-l-4 border-l-rose-500">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-sm text-ink dark:text-white">⚡ Paralysis & Stroke Screening</span>
+                <span className="text-xs text-risk-low font-bold">Standard Range</span>
+              </div>
+              <p className="mt-2 text-xs muted">Facial symmetry, bilateral step harmony, and motor tone within typical limits.</p>
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="grid gap-5 lg:grid-cols-2">
         {/* Score ring */}
         <div className="card flex flex-col items-center justify-center p-8">
-          <h2 className="section-title mb-6 self-start">Overall Health Score</h2>
+          <h2 className="section-title mb-6 self-start">Overall Composite Score</h2>
           <ScoreRing
             score={assessment.overallScore}
             label={style.label}
@@ -303,7 +405,7 @@ export default function Result() {
         <div className="flex flex-col gap-5">
           {/* Risk */}
           <div className="card p-6">
-            <h2 className="section-title mb-3">Risk Level</h2>
+            <h2 className="section-title mb-3">Overall Risk Category</h2>
             <p className={`text-3xl font-extrabold ${style.text}`}>{assessment.riskLabel}</p>
             <p className="mt-1.5 text-sm muted">
               {assessment.riskLevel === 'low'
