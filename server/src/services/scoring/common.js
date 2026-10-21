@@ -98,4 +98,4 @@ export function ageAdjust(score, age) {
   return clamp(score + (score < 90 ? bonus : 0));
 }
 
-export const ENGINE_VERSION = '1.0.0';
+export const ENGINE_VERSION = '1.1.0'; // 1.1: real-data calibration (see README)

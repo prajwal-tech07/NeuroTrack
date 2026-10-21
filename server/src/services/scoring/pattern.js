@@ -234,13 +234,15 @@ export function classifyPattern({ modules = {}, raw = {}, laterality = {}, overa
       evidence: 'One eye does not close as fully as the other',
     },
     {
-      value: isNum(faceF.asymmetryIndex) ? clamp((faceF.asymmetryIndex - 0.05) / 0.2, 0, 1) : null,
+      // Evidence only above the healthy 90th percentile (0.49 on 998 healthy faces).
+      value: isNum(faceF.asymmetryIndex) ? clamp((faceF.asymmetryIndex - 0.5) / 0.25, 0, 1) : null,
       weight: 0.12,
       evidence: 'Facial movement is uneven between the two sides',
     },
     {
       // Absence of rest tremor argues for weakness over Parkinsonism.
-      value: isNum(tremorHz) ? 1 - restTremor : null,
+      // A measured hold with no tremor (tremorDetected === false) counts as absence too.
+      value: isNum(tremorHz) || handF.tremorDetected === false ? 1 - restTremor : null,
       weight: 0.08,
       evidence: 'No rest tremor detected',
     },

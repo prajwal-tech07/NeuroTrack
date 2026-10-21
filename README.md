@@ -313,6 +313,31 @@ The other ML-service classifiers (Parkinson's, paralysis) are transparent rule e
 "confidence" is the share of relevant tests completed, weighted by recording quality. It is not an
 accuracy. The face-photo model is trained on synthetic data and is labelled as such.
 
+## Scoring engine 1.1: calibrated on real data
+
+Before 1.1, almost every user got a similar "Mild/Moderate risk" result, often labelled one-sided
+weakness or Parkinsonian. A simulated healthy person, run through the real browser and server code,
+scored 61-74, and the label changed from run to run. These were the causes and fixes:
+
+| Problem | Fix |
+|---|---|
+| Face asymmetry counted as normal only up to 0.05, but MediaPipe rates healthy faces at a median of 0.27 (998 healthy photos). Almost everyone scored 0 for symmetry, and it counted as evidence of one-sided weakness | Normal is now up to 0.40; evidence starts above the healthy 90th percentile |
+| Left/right comparisons divided the difference by the larger value, so two noise-level values (e.g. arm drift of +0.002 vs -0.003) read as a 100% one-sided difference | A noise floor per measure, set from measured healthy values |
+| A failed measurement on one side was stored as 0, which read as total weakness | A failed measurement is now stored as null |
+| Tap speed and size depended on frame rate: the same healthy hand scored 90 at 30 fps and 58 at 12 fps | Speed is taken from the dominant frequency; size from the 5th-95th percentile spread; frame rate is recorded and lowers the quality score instead |
+| Camera jitter alone was reported as a "4-6 Hz rest tremor" | A tremor now needs both a clear spectral peak and at least about 3 mm of movement |
+| The camera loop re-analysed duplicate frames and re-rendered React on every frame | Only new frames are analysed, and UI updates are throttled |
+| A fixed loudness gate in the voice pitch detector discarded most speech (auto-gain is off); octave errors added fake jitter | The gate is relative to the recording, octave errors are avoided, and voicing agrees with Praat on 91% of frames |
+| Jitter and shimmer were measured on the read sentence, so normal intonation failed nearly every healthy speaker | The browser's jitter, shimmer and HNR are no longer scored; the voice model's Praat values are used instead |
+| Voice thresholds came from textbooks and the phonation target was 12 s for an 8 s cue | Thresholds now come from healthy speakers (Sakar, Iyer, KCL) |
+| Removing gait capped every complete assessment at 84 | The cap only counts the tests the app offers |
+
+`server/test/golden.test.js` locks this in. A healthy profile must score low risk and "typical" at 12-30
+fps. A Parkinsonian profile and a right-sided-weakness profile must still be detected. Trade-off: on the
+synthetic `npm run validate -- --hard` set, mild one-sided weakness is now caught 52% of the time, down
+from 94%. The old figure relied on synthetic faces whose healthy asymmetry was about 10 times lower than
+real faces. Real opt-in data should settle the noise floors.
+
 ## Gait rules measured on real walking data
 
 `ml-service/scripts/evaluate_gait_rules.py` checks the app's gait rules (`gait.js`, unchanged) against

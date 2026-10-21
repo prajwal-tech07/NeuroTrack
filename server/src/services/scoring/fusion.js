@@ -8,12 +8,23 @@ import classifyPattern from './pattern.js';
 
 export const MODULE_KEYS = ['voice', 'face', 'hand', 'gait'];
 
+/**
+ * Tests the assessment flow currently offers. The coverage cap counts only
+ * these: gait was removed from the flow, and counting it capped every
+ * complete assessment at 84.
+ */
+export const OFFERED_MODULES = ['voice', 'face', 'hand'];
+
 export const MODULE_LABELS = {
   voice: 'Voice Analysis',
   face: 'Facial Analysis',
   hand: 'Hand Movement',
   gait: 'Gait Analysis',
 };
+
+/** Highest overall score allowed alongside a confident / tentative pattern finding. */
+const PATTERN_CAP_CONFIDENT = 64;
+const PATTERN_CAP_TENTATIVE = 79;
 
 /** Base fusion weights — renormalised over whichever modules were completed. */
 const BASE_WEIGHTS = { voice: 0.27, face: 0.23, hand: 0.27, gait: 0.23 };
@@ -75,15 +86,27 @@ export function analyzeAssessment({ modules = {}, age } = {}) {
 
   // Incomplete assessments are reported but capped, since fewer signals means
   // less confidence in a high score.
-  const coverageCap = completed.length === 4 ? 100 : 88 - (4 - completed.length) * 4;
+  const missing = OFFERED_MODULES.filter((k) => !completed.includes(k)).length;
+  const coverageCap = missing === 0 ? 100 : 88 - missing * 4;
 
-  const overallScore = Math.round(clamp(Math.min(mean - penalty, coverageCap)));
-  const risk = riskFromScore(overallScore);
+  const uncapped = clamp(mean - penalty);
 
   // Which pattern the impairment resembles is decided separately from how
   // severe it is: the module scores answer "how much", the classifier "what kind".
   const laterality = analyzeLaterality(modules);
-  const pattern = classifyPattern({ modules: results, raw: modules, laterality, overallScore });
+  // The pattern classifier judges impairment on the measured score, not the
+  // coverage-capped one (a cap is about confidence, not about being impaired).
+  const pattern = classifyPattern({ modules: results, raw: modules, laterality, overallScore: uncapped });
+
+  // A recognised pattern must not sit under a "Low Risk" label: a confident
+  // Parkinsonian or one-sided-weakness finding caps the score in the moderate
+  // band, a tentative one in the mild band.
+  const patternCap = pattern.type === 'parkinsonian' || pattern.type === 'hemiparetic'
+    ? (pattern.tentative ? PATTERN_CAP_TENTATIVE : PATTERN_CAP_CONFIDENT)
+    : 100;
+
+  const overallScore = Math.round(Math.min(uncapped, coverageCap, patternCap));
+  const risk = riskFromScore(overallScore);
 
   return {
     modules: results,

@@ -1,4 +1,9 @@
-import { cv, dist, findPeaks, mean, median, smooth, spectralPeak, std } from './dsp.js';
+import { cv, detrend, dist, findPeaks, mean, median, spectralPeak, std } from './dsp.js';
+
+/** A tremor peak must stand this many times above the median spectral power... */
+const TREMOR_PEAKINESS = 6;
+/** ...and move at least this much (palm lengths, ~3 mm), above landmark jitter. */
+const TREMOR_MIN_AMPLITUDE = 0.03;
 
 /** HandLandmarker indices. */
 const WRIST = 0;
@@ -115,75 +120,114 @@ export class HandTracker {
     );
   }
 
-  /** Peak/trough analysis of one side's tapping trace. */
+  /**
+   * Tapping analysis for one side, built to give the same answer at 12 fps as at
+   * 30 fps. Browsers often analyse far fewer frames than the camera delivers,
+   * and the previous peak-counting version read a healthy hand as slow and
+   * small on slower machines.
+   *
+   * - speed: dominant frequency of the uniformly resampled trace (spectral,
+   *   so it does not depend on catching every peak)
+   * - amplitude: 5th-95th percentile spread in 2 s windows. Frames land at
+   *   different phases of successive taps, so the spread still reaches the
+   *   true opening even when individual peaks are under-sampled.
+   * - rhythm (interval CV, hesitations) needs individual taps and is only
+   *   reported when the frame rate is high enough to resolve them.
+   */
   analyzeTaps(side) {
     const bucket = this.sides[side];
-    if (bucket.tapDistances.length < 20) return null;
+    const raw = bucket.tapDistances;
+    const times = bucket.tapTimes;
+    const n = raw.length;
+    if (n < 20) return null;
 
-    const signal = smooth(bucket.tapDistances, 3);
-    const range = Math.max(...signal) - Math.min(...signal);
+    const durationSec = (times[n - 1] - times[0]) / 1000;
+    if (durationSec < 3) return null;
+    const fps = (n - 1) / durationSec;
+
+    const range = percentile(raw, 95) - percentile(raw, 5);
     if (range < 0.05) return null; // hand never really moved
 
-    const tapDurationSec =
-      (bucket.tapTimes[bucket.tapTimes.length - 1] - bucket.tapTimes[0]) / 1000;
-    const fps = signal.length / Math.max(tapDurationSec, 0.001);
+    const rate = Math.max(8, Math.min(30, Math.round(fps)));
+    const { series } = resampleUniform(times, raw, rate);
+    const spec = spectralPeak(series, rate, { minHz: 0.8, maxHz: Math.min(8, rate / 2 - 0.25) });
+    const tapFrequencyHz = spec.peakHz;
+    if (!(tapFrequencyHz > 0)) return null;
 
-    // Taps faster than ~8 Hz are not physiologically plausible, so that sets the
-    // minimum separation between accepted peaks.
-    const peaks = findPeaks(signal, {
-      minDistance: Math.max(2, Math.round(fps / 8)),
-      minProminence: Math.min(...signal) + range * 0.45,
-    });
-
-    if (peaks.length < 3) return null;
-
-    // Amplitude of each tap: peak height above the following local minimum.
+    // Amplitude per 2 s window, in time order (for the decrement).
     const amplitudes = [];
-    for (let i = 0; i < peaks.length; i++) {
-      const start = peaks[i];
-      const end = i + 1 < peaks.length ? peaks[i + 1] : signal.length;
-      let trough = signal[start];
-      for (let k = start; k < end; k++) if (signal[k] < trough) trough = signal[k];
-      amplitudes.push(signal[start] - trough);
+    const windowMs = 2000;
+    for (let start = times[0]; start + windowMs <= times[n - 1] + 1; start += windowMs) {
+      const w = [];
+      for (let i = 0; i < n; i++) if (times[i] >= start && times[i] < start + windowMs) w.push(raw[i]);
+      if (w.length >= 6) amplitudes.push(percentile(w, 95) - percentile(w, 5));
     }
-
-    const intervals = [];
-    for (let i = 1; i < peaks.length; i++) {
-      intervals.push((bucket.tapTimes[peaks[i]] - bucket.tapTimes[peaks[i - 1]]) / 1000);
-    }
-
+    if (!amplitudes.length) amplitudes.push(range);
     const third = Math.max(1, Math.floor(amplitudes.length / 3));
     const firstThird = mean(amplitudes.slice(0, third));
     const lastThird = mean(amplitudes.slice(-third));
     const decay = firstThird > 0 ? Math.max(0, (firstThird - lastThird) / firstThird) : 0;
 
-    const medianInterval = median(intervals) || 1;
-    const hesitations = intervals.filter((iv) => iv > medianInterval * 2).length;
+    // Individual taps need >= ~4 samples per cycle.
+    let tapIntervalCv = null;
+    let tapHesitations = null;
+    if (fps >= 4 * tapFrequencyHz) {
+      const peaks = findPeaks(raw, {
+        minDistance: Math.max(2, Math.round(fps / 8)),
+        minProminence: percentile(raw, 5) + range * 0.5,
+      });
+      if (peaks.length >= 4) {
+        const intervals = [];
+        for (let i = 1; i < peaks.length; i++) intervals.push((times[peaks[i]] - times[peaks[i - 1]]) / 1000);
+        const medianInterval = median(intervals) || 1;
+        tapIntervalCv = cv(intervals);
+        tapHesitations = intervals.filter((iv) => iv > medianInterval * 2).length;
+      }
+    }
 
     return {
-      tapCount: peaks.length,
-      tapFrequencyHz: tapDurationSec > 0 ? peaks.length / tapDurationSec : 0,
-      tapAmplitudeMean: mean(amplitudes),
+      tapCount: Math.round(tapFrequencyHz * durationSec),
+      tapFrequencyHz,
+      tapAmplitudeMean: median(amplitudes),
       tapAmplitudeDecay: decay,
-      tapIntervalCv: cv(intervals),
-      tapHesitations: hesitations,
+      tapIntervalCv,
+      tapHesitations,
+      fps,
     };
   }
 
-  /** Spectral analysis of one side's postural-hold trace. */
+  /**
+   * Tremor and drift analysis of one side's postural hold.
+   *
+   * A tremor is only reported when there is one: a clear spectral peak well
+   * above the background AND a movement larger than landmark noise. Reporting
+   * the 4-6 Hz share of pure tracking noise (as before) flagged healthy hands
+   * with a "rest tremor".
+   */
   analyzeHold(side) {
     const bucket = this.sides[side];
-    if (bucket.holdX.length < 30) return null;
+    const n = bucket.holdX.length;
+    if (n < 30) return null;
 
-    const { series: xs, rate } = resampleUniform(bucket.holdTimes, bucket.holdX);
-    const { series: ys } = resampleUniform(bucket.holdTimes, bucket.holdY);
+    const durationSec = (bucket.holdTimes[n - 1] - bucket.holdTimes[0]) / 1000;
+    if (durationSec < 2) return null;
+    const fps = (n - 1) / durationSec;
+    // Analyse at the real frame rate: upsampling invents spectrum above it.
+    const rate = Math.max(8, Math.min(30, Math.round(fps)));
+    const { series: xs } = resampleUniform(bucket.holdTimes, bucket.holdX, rate);
+    const { series: ys } = resampleUniform(bucket.holdTimes, bucket.holdY, rate);
     if (xs.length < 16) return null;
 
-    // Physiological tremor is 8-12 Hz; rest tremor sits at 4-6 Hz. We look for
-    // the dominant oscillation and how much energy sits in 3.5-6.5 Hz.
-    const sx = spectralPeak(xs, rate, { minHz: 1, maxHz: 14, bandLo: 3.5, bandHi: 6.5 });
-    const sy = spectralPeak(ys, rate, { minHz: 1, maxHz: 14, bandLo: 3.5, bandHi: 6.5 });
+    const maxHz = Math.min(12, rate / 2 - 0.25);
+    const opts = { minHz: 1, maxHz, bandLo: 3.5, bandHi: 6.5 };
+    const sx = spectralPeak(xs, rate, opts);
+    const sy = spectralPeak(ys, rate, opts);
     const dominant = sx.peakPower >= sy.peakPower ? sx : sy;
+    const axis = dominant === sx ? xs : ys;
+
+    // Oscillation size in palm lengths, slow drift removed.
+    const amplitude = std(detrend(axis, Math.max(5, Math.round(rate * 0.7))));
+    const tremorDetected = dominant.peakiness >= TREMOR_PEAKINESS && amplitude >= TREMOR_MIN_AMPLITUDE;
 
     // Slow drift: how far the mean position moved from the first to last quarter.
     const q = Math.max(2, Math.floor(xs.length / 4));
@@ -191,8 +235,10 @@ export class HandTracker {
     const driftY = mean(ys.slice(-q)) - mean(ys.slice(0, q));
 
     return {
-      tremorPeakHz: dominant.peakHz,
-      tremorPowerRatio: Math.max(sx.bandRatio, sy.bandRatio),
+      tremorDetected,
+      tremorPeakHz: tremorDetected ? dominant.peakHz : null,
+      tremorPowerRatio: tremorDetected ? dominant.bandRatio : 0,
+      tremorAmplitude: amplitude,
       holdDriftPx: Math.hypot(driftX, driftY),
       // Downward drift specifically suggests weakness rather than tremor.
       holdDropY: driftY,
@@ -208,17 +254,20 @@ export class HandTracker {
 
     const bucket = this.sides[side];
     return {
-      tapFrequencyHz: round(taps?.tapFrequencyHz ?? 0, 3),
-      tapCount: taps?.tapCount ?? 0,
-      tapAmplitudeMean: round(taps?.tapAmplitudeMean ?? 0, 4),
-      tapAmplitudeDecay: round(taps?.tapAmplitudeDecay ?? 0, 4),
-      tapIntervalCv: round(taps?.tapIntervalCv ?? 0, 4),
-      tapHesitations: taps?.tapHesitations ?? 0,
-      tremorPeakHz: round(hold?.tremorPeakHz ?? 0, 2),
-      tremorPowerRatio: round(hold?.tremorPowerRatio ?? 0, 4),
-      holdDriftPx: round(hold?.holdDriftPx ?? 0, 4),
-      holdDropY: round(hold?.holdDropY ?? 0, 4),
+      tapFrequencyHz: round(taps?.tapFrequencyHz, 3),
+      tapCount: taps?.tapCount ?? null,
+      tapAmplitudeMean: round(taps?.tapAmplitudeMean, 4),
+      tapAmplitudeDecay: round(taps?.tapAmplitudeDecay, 4),
+      tapIntervalCv: round(taps?.tapIntervalCv, 4),
+      tapHesitations: taps?.tapHesitations ?? null,
+      tremorDetected: hold ? hold.tremorDetected : null,
+      tremorPeakHz: round(hold?.tremorPeakHz, 2),
+      tremorAmplitude: round(hold?.tremorAmplitude, 4),
+      tremorPowerRatio: round(hold?.tremorPowerRatio, 4),
+      holdDriftPx: round(hold?.holdDriftPx, 4),
+      holdDropY: round(hold?.holdDropY, 4),
       trackedRatio: round(bucket.frames ? bucket.detected / bucket.frames : 0, 3),
+      fps: round(taps?.fps, 1),
       tapAnalysed: Boolean(taps),
       holdAnalysed: Boolean(hold),
     };
@@ -259,6 +308,10 @@ export class HandTracker {
     if (!f.bothSidesTested) q *= 0.6;
     if (!f.tapAnalysed) q *= 0.55;
     if (!f.holdAnalysed) q *= 0.7;
+    // Below ~15 analysed frames per second tapping is under-sampled: report
+    // lower confidence instead of letting it read as slowness.
+    const fps = Math.min(...['left', 'right'].map((s) => f[s]?.fps).filter(Number.isFinite));
+    if (Number.isFinite(fps) && fps < 15) q *= Math.max(0.3, fps / 15);
     return Number(clamp01(q).toFixed(3));
   }
 }
@@ -270,9 +323,22 @@ export class HandTracker {
 function pickWorse(left, right) {
   if (!left) return right;
   if (!right) return left;
-  const burden = (s) => (s.tapFrequencyHz || 0) - (s.tapAmplitudeDecay || 0) * 3;
+  // A side without tap data cannot be compared on tapping; prefer the measured one.
+  if (left.tapFrequencyHz == null) return right.tapFrequencyHz == null ? left : right;
+  if (right.tapFrequencyHz == null) return left;
+  const burden = (s) => s.tapFrequencyHz - (s.tapAmplitudeDecay || 0) * 3;
   return burden(left) <= burden(right) ? left : right;
 }
 
-const round = (v, d) => (Number.isFinite(v) ? Number(v.toFixed(d)) : 0);
+/** Rounds a measurement; anything not measured stays null (never 0, which reads as "no movement"). */
+const round = (v, d) => (Number.isFinite(v) ? Number(v.toFixed(d)) : null);
+
+function percentile(arr, p) {
+  const s = [...arr].sort((a, b) => a - b);
+  if (!s.length) return 0;
+  const idx = (p / 100) * (s.length - 1);
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  return s[lo] + (s[hi] - s[lo]) * (idx - lo);
+}
 const clamp01 = (v) => Math.max(0, Math.min(1, v));

@@ -167,7 +167,7 @@ function makeTypical() {
   const tap = gauss(5.0, 0.7);
   const shut = pos(gauss(0.012, 0.006));
   const expr = pos(gauss(0.165, 0.03), 0.02);
-  const smile = pos(gauss(0.27, 0.05), 0.03);
+  const smile = pos(gauss(0.58, 0.12), 0.05);
   const brow = pos(gauss(0.16, 0.04), 0.02);
   const swing = pos(gauss(0.175, 0.03), 0.02);
   const step = gauss(1.05, 0.08);
@@ -175,7 +175,8 @@ function makeTypical() {
   return {
     voice: voiceModule({ jitter: gauss(0.5, 0.15), shimmer: gauss(2.3, 0.6), hnr: gauss(23, 2.5), prosody: gauss(3.2, 0.5) }),
     face: faceModule({
-      expr, asym: pos(gauss(0.03, 0.015)),
+      // Real-data scale: MediaPipe rates healthy faces ~0.27 (998 photos), not ~0.03.
+      expr, asym: pos(gauss(0.28, 0.09)),
       smileL: smile * uniform(0.94, 1.06), smileR: smile * uniform(0.94, 1.06),
       browL: brow * uniform(0.93, 1.07), browR: brow * uniform(0.93, 1.07),
       shutL: shut, shutR: pos(shut + gauss(0, 0.004)), blink: gauss(18, 3.5),
@@ -203,7 +204,7 @@ function makeParkinsonian() {
   const baseTap = 4.6 - severity * 2.9;
   const sideGap = uniform(0, 0.22);
   const expr = pos(0.16 - severity * 0.115, 0.01);
-  const smile = pos(0.27 - severity * 0.19, 0.02);
+  const smile = pos(0.58 - severity * 0.4, 0.03);
   const brow = pos(0.16 - severity * 0.11, 0.015);
   const shut = pos(gauss(0.013, 0.006));
   const swing = pos(0.175 - severity * 0.13, 0.012);
@@ -215,7 +216,7 @@ function makeParkinsonian() {
       hnr: 23 - severity * 13, prosody: pos(3.2 - severity * 2.4, 0.2),
     }),
     face: faceModule({
-      expr, asym: pos(gauss(0.04, 0.02)),
+      expr, asym: pos(gauss(0.29, 0.09)),
       smileL: smile * uniform(0.9, 1.1), smileR: smile * uniform(0.9, 1.1),
       browL: brow * uniform(0.9, 1.1), browR: brow * uniform(0.9, 1.1),
       shutL: shut, shutR: pos(shut + gauss(0, 0.005)),
@@ -244,7 +245,7 @@ function makeHemiparetic() {
 
   const goodTap = gauss(4.8, 0.6);
   const badTap = goodTap * (1 - severity * 0.62);
-  const goodSmile = pos(gauss(0.27, 0.04), 0.03);
+  const goodSmile = pos(gauss(0.58, 0.12), 0.05);
   const badSmile = goodSmile * (1 - severity * 0.72);
   const goodBrow = pos(gauss(0.16, 0.035), 0.02);
   // Central (stroke) lesions spare the forehead; peripheral palsy does not.
@@ -276,7 +277,7 @@ function makeHemiparetic() {
     }),
     face: faceModule({
       expr: pos(gauss(0.13, 0.03), 0.015),
-      asym: 0.06 + severity * 0.2,
+      asym: 0.3 + severity * 0.45 + gauss(0, 0.05),
       smileL: smile.L, smileR: smile.R,
       browL: brow.L, browR: brow.R,
       shutL: shut.L, shutR: shut.R,

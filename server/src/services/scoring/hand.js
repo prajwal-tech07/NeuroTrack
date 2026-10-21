@@ -52,8 +52,11 @@ export function scoreHand(raw = {}) {
 
   // A dominant frequency in the 4-6 Hz rest-tremor band is the concerning
   // pattern; physiological tremor sits higher (8-12 Hz) and is unremarkable.
-  const tremorBand =
-    isNum(f.tremorPeakHz) && isNum(f.tremorPowerRatio)
+  // `tremorDetected === false` means the hold was measured and no oscillation
+  // stood out from tracking noise: that is a normal result, not a missing one.
+  const tremorBand = f.tremorDetected === false
+    ? 100
+    : isNum(f.tremorPeakHz) && isNum(f.tremorPowerRatio)
       ? f.tremorPeakHz >= 3.5 && f.tremorPeakHz <= 6.5
         ? scoreLowerIsBetter(f.tremorPowerRatio, 0.08, 0.4)
         : 100

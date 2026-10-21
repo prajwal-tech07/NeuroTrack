@@ -45,9 +45,13 @@ export function scoreFace(raw = {}) {
   const expressivity = scoreHigherIsBetter(f.expressivityIndex, 0.12, 0.02);
   const smile = scoreHigherIsBetter(f.smileAmplitude, 0.18, 0.03);
   const brow = scoreHigherIsBetter(f.browRaiseAmplitude, 0.1, 0.015);
-  const symmetry = scoreLowerIsBetter(f.asymmetryIndex, 0.05, 0.22);
+  // Reference ranges measured with MediaPipe on 998 photos of healthy faces:
+  // asymmetry index median 0.27, 75th pct 0.39, 99th pct 0.68 (blendshapes are
+  // inherently uneven); eye-opening asymmetry 75th pct 0.066, 99th pct 0.24.
+  // The previous 0.05 limit gave nearly every healthy face 0 for symmetry.
+  const symmetry = scoreLowerIsBetter(f.asymmetryIndex, 0.4, 0.7);
   const jaw = scoreHigherIsBetter(f.mouthOpenRange, 0.12, 0.02);
-  const eyeSym = scoreLowerIsBetter(f.eyeOpenAsymmetry, 0.06, 0.25);
+  const eyeSym = scoreLowerIsBetter(f.eyeOpenAsymmetry, 0.07, 0.25);
 
   const indicators = [
     indicator({
@@ -92,7 +96,7 @@ export function scoreFace(raw = {}) {
       value: f.asymmetryIndex,
       unit: '',
       score: symmetry,
-      normal: '< 0.05',
+      normal: '< 0.40',
       note: 'Left/right mismatch during expression.',
     }),
     indicator({
@@ -110,7 +114,7 @@ export function scoreFace(raw = {}) {
       value: f.eyeOpenAsymmetry,
       unit: '',
       score: eyeSym,
-      normal: '< 0.06',
+      normal: '< 0.07',
       note: 'Difference in how wide each eye opens.',
     }),
   ];
