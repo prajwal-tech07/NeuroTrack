@@ -9,7 +9,7 @@ import { frameBrightness, startCamera, stopStream } from '../lib/mediapipe.js';
  *
  * @param {object}   options
  * @param {Function} options.loadLandmarker  async () => landmarker
- * @param {Function} options.onResult        (result, timestampMs, brightness) => void
+ * @param {Function} options.onResult        (result, timestampMs, brightness, video) => void
  * @param {Function} [options.onDraw]        (ctx, result, video) => void  overlay painter
  * @param {number}   options.durationSec     capture length
  * @param {Function} [options.onComplete]    called once when the timer finishes
@@ -124,7 +124,7 @@ export function useVisionRecorder({
           }
         }
 
-        cbs.current.onResult?.(result, ts, brightnessRef.current);
+        cbs.current.onResult?.(result, ts, brightnessRef.current, video);
 
         const hasSubject =
           (result?.faceLandmarks?.length || result?.landmarks?.length || 0) > 0;

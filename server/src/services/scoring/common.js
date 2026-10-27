@@ -65,15 +65,17 @@ export function statusFor(score) {
 /**
  * Builds one indicator row for the UI/report.
  * `value` is the raw measurement, `score` the 0-100 mapping of it.
+ * `informational` rows are shown but not scored (status 'info'): measures that
+ * real data showed are too noisy at this test length to judge anyone by.
  */
-export function indicator({ key, label, value, unit, score, normal, note }) {
+export function indicator({ key, label, value, unit, score, normal, note, informational = false }) {
   return {
     key,
     label,
     value: isNum(value) ? Number(value.toFixed(2)) : null,
     unit: unit || '',
-    score: isNum(score) ? Math.round(score) : null,
-    status: statusFor(score),
+    score: informational || !isNum(score) ? null : Math.round(score),
+    status: informational ? 'info' : statusFor(score),
     normal: normal || '',
     note: note || '',
   };
@@ -98,4 +100,4 @@ export function ageAdjust(score, age) {
   return clamp(score + (score < 90 ? bonus : 0));
 }
 
-export const ENGINE_VERSION = '1.1.0'; // 1.1: real-data calibration (see README)
+export const ENGINE_VERSION = '1.2.0'; // 1.2: hand/face measures re-calibrated on real recordings (see README)

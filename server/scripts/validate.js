@@ -49,25 +49,29 @@ const HARD = process.argv.includes('--hard');
 // Distributions are deliberately overlapping and noisy. Cleanly separable
 // fake data would produce a meaningless 100%.
 
-function handModule({ leftTap, rightTap, decay, tremorHz, tremorPower, leftDrift, rightDrift }) {
-  const side = (tap, drift) => ({
+// Hand values are on the scale the browser code measures on real MediaPipe
+// recordings (engine 1.2): normal hands tap ~3.2 Hz, open ~1.2 palm lengths,
+// drift ~0.1-0.6 palm lengths over a hold, and show no tremor.
+function handModule({ leftTap, rightTap, leftAmp, rightAmp, decay, tremor = null, leftDrift, rightDrift }) {
+  const side = (tap, amp, drift) => ({
     tapFrequencyHz: pos(tap, 0.2),
     tapCount: Math.round(pos(tap, 0.2) * 10),
-    tapAmplitudeMean: pos(gauss(0.1 + tap * 0.055, 0.03), 0.02),
-    tapAmplitudeDecay: pos(decay + gauss(0, 0.05)),
-    tapIntervalCv: pos(gauss(0.12 + decay * 0.5, 0.05), 0.02),
-    tapHesitations: Math.max(0, Math.round(gauss(decay * 6, 1.2))),
-    tremorPeakHz: tremorHz,
-    tremorPowerRatio: pos(tremorPower + gauss(0, 0.03)),
-    holdDriftPx: pos(Math.abs(drift) + gauss(0.012, 0.006)),
+    tapAmplitudeMean: pos(amp + gauss(0, 0.08), 0.05),
+    tapAmplitudeDecay: pos(decay + gauss(0, 0.06)),
+    tapIntervalCv: pos(gauss(0.25 + decay * 0.4, 0.12), 0.05),
+    tapHesitations: Math.max(0, Math.round(gauss(decay * 4, 1.5))),
+    tremorDetected: Boolean(tremor),
+    tremorPeakHz: tremor ? tremor.hz : null,
+    tremorPowerRatio: tremor ? pos(tremor.power + gauss(0, 0.05)) : 0,
+    holdDriftPx: pos(Math.abs(drift) + Math.abs(gauss(0.1, 0.08))),
     holdDropY: drift,
     trackedRatio: uniform(0.85, 0.99),
     tapAnalysed: true,
     holdAnalysed: true,
   });
 
-  const left = side(leftTap, leftDrift);
-  const right = side(rightTap, rightDrift);
+  const left = side(leftTap, leftAmp, leftDrift);
+  const right = side(rightTap, rightAmp, rightDrift);
   const worse = left.tapFrequencyHz <= right.tapFrequencyHz ? left : right;
 
   return {
@@ -162,10 +166,15 @@ function voiceModule({ jitter, shimmer, hnr, prosody }) {
   };
 }
 
-/** Healthy: symmetric, everything in range. */
+/** Healthy: everything in range, with ordinary handedness and camera asymmetry. */
 function makeTypical() {
-  const tap = gauss(5.0, 0.7);
-  const shut = pos(gauss(0.012, 0.006));
+  const tap = pos(gauss(3.2, 0.6), 1.8);
+  const amp = pos(gauss(1.2, 0.2), 0.6);
+  // Non-dominant hand: up to ~20% slower and a little smaller.
+  const leftDominant = rnd() < 0.12;
+  const slow = uniform(0.8, 1.0);
+  const small = uniform(0.82, 1.05);
+  const shut = pos(gauss(0.015, 0.006));
   const expr = pos(gauss(0.165, 0.03), 0.02);
   const smile = pos(gauss(0.58, 0.12), 0.05);
   const brow = pos(gauss(0.16, 0.04), 0.02);
@@ -177,15 +186,15 @@ function makeTypical() {
     face: faceModule({
       // Real-data scale: MediaPipe rates healthy faces ~0.27 (998 photos), not ~0.03.
       expr, asym: pos(gauss(0.28, 0.09)),
-      smileL: smile * uniform(0.94, 1.06), smileR: smile * uniform(0.94, 1.06),
-      browL: brow * uniform(0.93, 1.07), browR: brow * uniform(0.93, 1.07),
-      shutL: shut, shutR: pos(shut + gauss(0, 0.004)), blink: gauss(18, 3.5),
+      smileL: smile * uniform(0.88, 1.12), smileR: smile * uniform(0.88, 1.12),
+      browL: brow * uniform(0.88, 1.12), browR: brow * uniform(0.88, 1.12),
+      shutL: shut, shutR: pos(shut + gauss(0, 0.005)), blink: gauss(18, 3.5),
     }),
     hand: handModule({
-      leftTap: tap * uniform(0.93, 1.07), rightTap: tap * uniform(0.93, 1.07),
-      decay: pos(gauss(0.06, 0.03)), tremorHz: uniform(8.5, 11.5),
-      tremorPower: pos(gauss(0.05, 0.02)),
-      leftDrift: gauss(0, 0.008), rightDrift: gauss(0, 0.008),
+      leftTap: leftDominant ? tap : tap * slow, rightTap: leftDominant ? tap * slow : tap,
+      leftAmp: leftDominant ? amp : amp * small, rightAmp: leftDominant ? amp * small : amp,
+      decay: pos(gauss(0.08, 0.07)),
+      leftDrift: gauss(0.1, 0.15), rightDrift: gauss(0.1, 0.15),
     }),
     gait: gaitModule({
       cadence: gauss(112, 8),
@@ -201,7 +210,8 @@ function makeParkinsonian() {
   const severity = HARD ? uniform(0.22, 0.45) : uniform(0.35, 0.9);
   // Both hands slowed. PD onset is asymmetric, so allow a modest side gap —
   // this is what makes the task genuinely hard rather than trivially separable.
-  const baseTap = 4.6 - severity * 2.9;
+  const baseTap = 3.2 - severity * 2.0;
+  const baseAmp = 1.2 * (1 - severity * 0.55);
   const sideGap = uniform(0, 0.22);
   const expr = pos(0.16 - severity * 0.115, 0.01);
   const smile = pos(0.58 - severity * 0.4, 0.03);
@@ -224,10 +234,11 @@ function makeParkinsonian() {
     }),
     hand: handModule({
       leftTap: baseTap * (1 - sideGap / 2), rightTap: baseTap * (1 + sideGap / 2),
-      decay: 0.07 + severity * 0.38,
-      tremorHz: uniform(4.0, 6.1),
-      tremorPower: 0.1 + severity * 0.3,
-      leftDrift: gauss(0, 0.01), rightDrift: gauss(0, 0.01),
+      leftAmp: baseAmp * (1 - sideGap / 2), rightAmp: baseAmp * (1 + sideGap / 2),
+      decay: 0.1 + severity * 0.45,
+      // Rest tremor in about half of cases, more often with severity.
+      tremor: rnd() < 0.3 + 0.5 * severity ? { hz: uniform(4.0, 6.1), power: 0.3 + severity * 0.4 } : null,
+      leftDrift: gauss(0.1, 0.15), rightDrift: gauss(0.1, 0.15),
     }),
     gait: gaitModule({
       cadence: 112 - severity * 32,
@@ -243,15 +254,17 @@ function makeHemiparetic() {
   const severity = HARD ? uniform(0.25, 0.5) : uniform(0.4, 0.95);
   const weakLeft = rnd() < 0.5;
 
-  const goodTap = gauss(4.8, 0.6);
+  const goodTap = pos(gauss(3.4, 0.5), 2);
   const badTap = goodTap * (1 - severity * 0.62);
+  const goodAmp = pos(gauss(1.2, 0.2), 0.7);
+  const badAmp = goodAmp * (1 - severity * 0.6);
   const goodSmile = pos(gauss(0.58, 0.12), 0.05);
   const badSmile = goodSmile * (1 - severity * 0.72);
   const goodBrow = pos(gauss(0.16, 0.035), 0.02);
   // Central (stroke) lesions spare the forehead; peripheral palsy does not.
   const foreheadSpared = rnd() < 0.6;
   const badBrow = foreheadSpared ? goodBrow * uniform(0.85, 1.0) : goodBrow * (1 - severity * 0.7);
-  const goodShut = pos(gauss(0.012, 0.005));
+  const goodShut = pos(gauss(0.015, 0.005));
   const badShut = goodShut + severity * uniform(0.02, 0.06);
   const goodSwing = pos(gauss(0.175, 0.03), 0.02);
   const badSwing = goodSwing * (1 - severity * 0.7);
@@ -261,12 +274,13 @@ function makeHemiparetic() {
   const pick = (good, bad) => (weakLeft ? { L: bad, R: good } : { L: good, R: bad });
 
   const tap = pick(goodTap, badTap);
+  const amp = pick(goodAmp, badAmp);
   const smile = pick(goodSmile, badSmile);
   const brow = pick(goodBrow, badBrow);
   const shut = pick(goodShut, badShut);
   const swing = pick(goodSwing, badSwing);
   const step = pick(goodStep, badStep);
-  const drift = pick(gauss(0, 0.008), severity * uniform(0.03, 0.09));
+  const drift = pick(gauss(0.1, 0.12), severity * uniform(0.4, 1.2));
 
   return {
     // Speech after stroke is slurred rather than monotone: prosody is
@@ -285,9 +299,8 @@ function makeHemiparetic() {
     }),
     hand: handModule({
       leftTap: tap.L, rightTap: tap.R,
-      decay: pos(gauss(0.1, 0.05)),
-      tremorHz: uniform(8, 11.5),           // physiological band, not rest tremor
-      tremorPower: pos(gauss(0.06, 0.025)),
+      leftAmp: amp.L, rightAmp: amp.R,
+      decay: pos(gauss(0.1, 0.06)),
       leftDrift: drift.L, rightDrift: drift.R,
     }),
     gait: gaitModule({
@@ -329,6 +342,9 @@ function main() {
     confusion[t] = { typical: 0, parkinsonian: 0, hemiparetic: 0, mixed: 0 };
   }
 
+  // What the user is shown: the overall risk band, per true class.
+  const risk = Object.fromEntries(labels.map((t) => [t, { low: 0, mild: 0, moderate: 0, high: 0 }]));
+
   let correct = 0;
   let total = 0;
   let sideCorrect = 0;
@@ -342,6 +358,7 @@ function main() {
       const predicted = result.pattern.type;
 
       confusion[trueLabel][predicted]++;
+      risk[trueLabel][result.riskLevel]++;
       total++;
       if (predicted === trueLabel) correct++;
       else if (verbose && misses.length < 12) {
@@ -398,6 +415,13 @@ function main() {
   console.log('');
 
   const accuracy = (correct / total) * 100;
+  console.log('  Overall risk band shown (rows = truth)');
+  console.log('  truth             low     mild  moderate     high');
+  for (const t of labels) {
+    const r = risk[t];
+    console.log(`  ${t.padEnd(13)}${String(r.low).padStart(8)}${String(r.mild).padStart(9)}${String(r.moderate).padStart(10)}${String(r.high).padStart(9)}`);
+  }
+  console.log('');
   console.log(`  Overall accuracy      ${accuracy.toFixed(1)}%   (${correct}/${total})`);
   if (sideTotal > 0) {
     console.log(`  Affected-side correct ${pct(sideCorrect, sideTotal)}   (${sideCorrect}/${sideTotal})`);

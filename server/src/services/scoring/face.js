@@ -41,17 +41,23 @@ export function scoreFace(raw = {}) {
     };
   }
 
+  // Blink rate is counted over the 7 s rest cue: 0-4 blinks for a normal rate,
+  // and staring at a screen halves it. Far too few to judge anyone by, so it is
+  // shown but not scored (it was 18% of the face score).
   const blink = scoreInRange(f.blinkRate, 12, 25, 3, 42);
-  const expressivity = scoreHigherIsBetter(f.expressivityIndex, 0.12, 0.02);
+  const expressivity = scoreHigherIsBetter(f.expressivityIndex, 0.08, 0.02);
   const smile = scoreHigherIsBetter(f.smileAmplitude, 0.18, 0.03);
   const brow = scoreHigherIsBetter(f.browRaiseAmplitude, 0.1, 0.015);
   // Reference ranges measured with MediaPipe on 998 photos of healthy faces:
   // asymmetry index median 0.27, 75th pct 0.39, 99th pct 0.68 (blendshapes are
   // inherently uneven); eye-opening asymmetry 75th pct 0.066, 99th pct 0.24.
   // The previous 0.05 limit gave nearly every healthy face 0 for symmetry.
-  const symmetry = scoreLowerIsBetter(f.asymmetryIndex, 0.4, 0.7);
+  // On video a slight head turn adds to it, hence a little more room than the photo limits.
+  const symmetry = scoreLowerIsBetter(f.asymmetryIndex, 0.45, 0.8);
+  // No cue asks for the mouth to open (a closed-lip smile is a full smile), so
+  // jaw range is informational.
   const jaw = scoreHigherIsBetter(f.mouthOpenRange, 0.12, 0.02);
-  const eyeSym = scoreLowerIsBetter(f.eyeOpenAsymmetry, 0.07, 0.25);
+  const eyeSym = scoreLowerIsBetter(f.eyeOpenAsymmetry, 0.1, 0.3);
 
   const indicators = [
     indicator({
@@ -60,8 +66,9 @@ export function scoreFace(raw = {}) {
       value: f.blinkRate,
       unit: '/min',
       score: blink,
+      informational: true,
       normal: '12 - 25 per minute',
-      note: 'Reduced spontaneous blinking is an early motor sign.',
+      note: 'Counted over a few seconds only, so shown for information and not scored.',
     }),
     indicator({
       key: 'expressivity',
@@ -69,7 +76,7 @@ export function scoreFace(raw = {}) {
       value: f.expressivityIndex,
       unit: '',
       score: expressivity,
-      normal: '> 0.12',
+      normal: '> 0.08',
       note: 'Overall movement across facial muscle groups.',
     }),
     indicator({
@@ -96,7 +103,7 @@ export function scoreFace(raw = {}) {
       value: f.asymmetryIndex,
       unit: '',
       score: symmetry,
-      normal: '< 0.40',
+      normal: '< 0.45',
       note: 'Left/right mismatch during expression.',
     }),
     indicator({
@@ -105,6 +112,7 @@ export function scoreFace(raw = {}) {
       value: f.mouthOpenRange,
       unit: '',
       score: jaw,
+      informational: true,
       normal: '> 0.12',
       note: 'Range of motion when opening the mouth.',
     }),
@@ -114,26 +122,23 @@ export function scoreFace(raw = {}) {
       value: f.eyeOpenAsymmetry,
       unit: '',
       score: eyeSym,
-      normal: '< 0.07',
+      normal: '< 0.10',
       note: 'Difference in how wide each eye opens.',
     }),
   ];
 
   const base = weightedMean([
-    { score: expressivity, weight: 0.24 },
-    { score: blink, weight: 0.18 },
-    { score: smile, weight: 0.16 },
-    { score: symmetry, weight: 0.16 },
-    { score: brow, weight: 0.12 },
-    { score: jaw, weight: 0.08 },
-    { score: eyeSym, weight: 0.06 },
+    { score: expressivity, weight: 0.3 },
+    { score: smile, weight: 0.22 },
+    { score: symmetry, weight: 0.22 },
+    { score: brow, weight: 0.16 },
+    { score: eyeSym, weight: 0.1 },
   ]);
 
   const score = clamp(base * (0.85 + 0.15 * quality));
 
   const flags = [];
   if (isNum(expressivity) && expressivity < 45) flags.push('face_reduced_expressivity');
-  if (isNum(blink) && blink < 45) flags.push('face_blink_rate_atypical');
   if (isNum(symmetry) && symmetry < 45) flags.push('face_asymmetry');
 
   return {

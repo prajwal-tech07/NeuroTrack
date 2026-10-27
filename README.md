@@ -338,6 +338,36 @@ synthetic `npm run validate -- --hard` set, mild one-sided weakness is now caugh
 from 94%. The old figure relied on synthetic faces whose healthy asymmetry was about 10 times lower than
 real faces. Real opt-in data should settle the noise floors.
 
+## Scoring engine 1.2: normal unless something is abnormal
+
+After 1.1, real users still got "Moderate risk, one-sided weakness (right side)" with a hand score
+around 40. Running the browser hand code on real MediaPipe recordings showed why. The recordings are
+from the PN Expert platform (Kaggle, MIT licence), rated by a doctor on MDS-UPDRS. On hands the doctor
+rated normal, the old code labelled 43 of 60 assembled "people" as one-sided weakness and put 28 at
+moderate risk. The new code puts 57 of 60 at low risk.
+
+| Problem (found on real data) | Fix |
+|---|---|
+| Hold position was divided by a per-frame palm length. Any change in hand distance or tilt became "drift" and "tremor": a tremor was reported on 78 of 80 holds the doctor rated tremor-free, and arm drift was ±2.5 palm lengths of pure noise, so the left/right "arm drift" comparison was random | Position relative to the hold's median, divided by its median 3D palm length. Tremor needs a clear 3-8 Hz peak and ≥ 0.045 palm lengths (~1.3 cm). Tremor is now flagged on 3% of tremor-free holds |
+| No time to switch hands: the 1-3 s spent switching landed at the start of the right hand's tapping window and read as right-sided decrement, pauses and slowing | Untimed "get ready / switch hands" periods between tasks |
+| Tap speed from the spectrum alone reported half the true speed on >10% of real trials, which reads as a weak hand | A time-domain tap count corrects the half-rate error (0% on the rated trials) |
+| Distances mixed x and y units (aspect ratio) and ignored depth, so amplitude changed with hand orientation | 3D landmarks in consistent units. This cut per-frame bone-length noise from 13% to 8% |
+| With one hand tracked, MediaPipe could stay locked on the wrong hand | Two hands tracked. The one being tested is picked by its handedness label, which named the real hand on 99% of 320 labelled photos |
+| Thresholds were stricter than normal hands on camera: 4 taps/s expected, but doctor-rated normal hands tap 3.0/s (10th percentile 2.0) | Speed, size, decrement and drift limits set from the rated recordings. Rhythm and hesitation counts don't separate normal from impaired on camera, so they carry little weight |
+| Face: the eye landmarks were named for the wrong side (checked on 594 photos), the first second after "close your eyes" counted as an eye that won't close, and blink rate over 7 s (0-4 blinks) was 18% of the face score | Eye sides fixed, reaction time excluded, median closure used. Blink rate and jaw range are shown but not scored |
+| Healthy handedness (dominant hand ~10-25% faster) read as one-sided weakness. One test leaning one way counted as "several tests agree". "No tremor" and "both sides equal" counted as evidence of disease | Each left/right measure tolerates normal differences. "Several tests agree" needs two tests. Absence of a finding is not evidence. A pattern is only reported when scores are out of the normal band, a specific finding is strong, or two tests agree on the weaker side |
+
+Checks:
+
+- `npm test` adds healthy cases with strong handedness, the other hand in view, noisy tracking,
+  uneven arm sag and stopping early. All must come out low risk and typical.
+- `npm run validate`: 0 of 6,000 synthetic healthy profiles are flagged. Clear one-sided weakness and
+  Parkinsonian profiles are caught about 68% of the time. Mild cases that look like ordinary
+  handedness are not flagged. That is the deliberate trade-off.
+- `npm run evaluate:hand` re-runs the real-data hand check. The download command is in the script.
+
+Assessments stored before 1.2 keep their old scores; users should retake the test.
+
 ## Gait rules measured on real walking data
 
 `ml-service/scripts/evaluate_gait_rules.py` checks the app's gait rules (`gait.js`, unchanged) against

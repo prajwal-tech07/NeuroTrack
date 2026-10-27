@@ -125,6 +125,7 @@ const SPECIFIC_WEIGHT = 0.38;
 export function classifyPattern({ modules = {}, raw = {}, laterality = {}, overallScore = 100 }) {
   const lat = isNum(laterality.index) ? laterality.index : null;
   const consistency = isNum(laterality.sideConsistency) ? laterality.sideConsistency : 0;
+  const agreeing = isNum(laterality.modalitiesAgreeing) ? laterality.modalitiesAgreeing : 0;
 
   const handF = raw.hand?.features || {};
   const faceF = raw.face?.features || {};
@@ -145,18 +146,29 @@ export function classifyPattern({ modules = {}, raw = {}, laterality = {}, overa
       ? clamp(tremorPower / 0.35, 0, 1)
       : 0;
 
+  // Thresholds match the module scorers (hand.js / face.js), which were set
+  // from real recordings of normal and impaired hands.
+  const bilateralSlowing = isNum(fastestTap) ? 1 - scoreHigherIsBetter(fastestTap, 2.2, 0.8) / 100 : null;
+  const hypomimia = isNum(faceF.expressivityIndex)
+    ? 1 - scoreHigherIsBetter(faceF.expressivityIndex, 0.08, 0.02) / 100
+    : null;
+  // How much bilateral impairment there is at all. "Both sides equal" is only
+  // evidence for a Parkinsonian pattern when both sides are actually impaired;
+  // for a healthy person it is simply normal.
+  const bilateralImpairment = Math.max(bilateralSlowing ?? 0, hypomimia ?? 0);
+
   // ================= Parkinsonian evidence =================
   const parkinsonian = evidenceScore([
     {
       // Both hands slow — bradykinesia is bilateral even when asymmetric at onset.
-      value: isNum(fastestTap) ? 1 - scoreHigherIsBetter(fastestTap, 4.0, 1.2) / 100 : null,
+      value: bilateralSlowing,
       weight: 0.2,
       specificity: 0.62,
       evidence: 'Repetitive movement slowed on both sides',
     },
     {
       value: isNum(handF.tapAmplitudeDecay)
-        ? 1 - scoreLowerIsBetter(handF.tapAmplitudeDecay, 0.12, 0.55) / 100
+        ? 1 - scoreLowerIsBetter(handF.tapAmplitudeDecay, 0.3, 0.7) / 100
         : null,
       weight: 0.16,
       specificity: 0.8, // decrement is characteristic of Parkinsonian bradykinesia
@@ -170,10 +182,7 @@ export function classifyPattern({ modules = {}, raw = {}, laterality = {}, overa
     },
     {
       // Bilateral hypomimia: expression reduced AND both sides reduced together.
-      value: isNum(faceF.expressivityIndex)
-        ? (1 - scoreHigherIsBetter(faceF.expressivityIndex, 0.12, 0.02) / 100) *
-          (lat === null ? 1 : 1 - clamp(lat, 0, 1))
-        : null,
+      value: isNum(hypomimia) ? hypomimia * (lat === null ? 1 : 1 - clamp(lat, 0, 1)) : null,
       weight: 0.16,
       evidence: 'Reduced facial expression on both sides',
     },
@@ -193,8 +202,8 @@ export function classifyPattern({ modules = {}, raw = {}, laterality = {}, overa
       evidence: 'Flat, monotone speech',
     },
     {
-      // Symmetry itself is evidence for this pattern.
-      value: lat === null ? null : 1 - clamp(lat / 0.4, 0, 1),
+      // Symmetry is evidence for this pattern only alongside bilateral impairment.
+      value: lat === null ? null : (1 - clamp(lat / 0.4, 0, 1)) * bilateralImpairment,
       weight: 0.1,
       evidence: 'Both sides affected roughly equally',
     },
@@ -203,23 +212,27 @@ export function classifyPattern({ modules = {}, raw = {}, laterality = {}, overa
   // ================= Hemiparetic evidence =================
   const hemiparetic = evidenceScore([
     {
-      // The headline signal: a large side difference.
-      value: lat === null ? null : clamp((lat - 0.15) / 0.4, 0, 1),
+      // The headline signal: a side difference. The laterality index already
+      // has normal handedness / camera differences subtracted, so anything
+      // above 0 is beyond what healthy people show.
+      value: lat === null ? null : clamp(lat / 0.3, 0, 1),
       weight: 0.3,
       specificity: 0.92, // a large, consistent side gap is the defining feature
       evidence: 'Large difference between the two sides',
     },
     {
-      // Multiple modalities agreeing on the same weak side.
-      value: lat === null ? null : consistency >= 0.7 ? clamp(consistency, 0, 1) : 0,
+      // Several tests agreeing on the same weak side. One test leaning one way
+      // is not "several": that used to count as full agreement on its own.
+      value: lat === null ? null : agreeing >= 2 && consistency >= 0.7 ? clamp(consistency, 0, 1) : 0,
       weight: 0.16,
       evidence: 'The same side is weaker across several tests',
     },
     {
-      // One hand near-normal while the other is slow: a spared side.
+      // One hand near-normal while the other is slow: a spared side. Healthy
+      // dominant/non-dominant differences reach ~25%.
       value:
         isNum(slowestTap) && isNum(fastestTap) && fastestTap > 0
-          ? clamp(((fastestTap - slowestTap) / fastestTap - 0.2) / 0.4, 0, 1)
+          ? clamp(((fastestTap - slowestTap) / fastestTap - 0.25) / 0.35, 0, 1)
           : null,
       weight: 0.14,
       specificity: 0.8, // a clearly spared side argues against a bilateral process
@@ -227,7 +240,7 @@ export function classifyPattern({ modules = {}, raw = {}, laterality = {}, overa
     },
     {
       value: faceF.eyeClosureTested
-        ? clamp((faceF.eyeClosureGap - 0.01) / 0.05, 0, 1)
+        ? clamp((faceF.eyeClosureGap - 0.015) / 0.04, 0, 1)
         : null,
       weight: 0.14,
       specificity: 0.95, // lagophthalmos is highly specific to facial weakness
@@ -238,13 +251,6 @@ export function classifyPattern({ modules = {}, raw = {}, laterality = {}, overa
       value: isNum(faceF.asymmetryIndex) ? clamp((faceF.asymmetryIndex - 0.5) / 0.25, 0, 1) : null,
       weight: 0.12,
       evidence: 'Facial movement is uneven between the two sides',
-    },
-    {
-      // Absence of rest tremor argues for weakness over Parkinsonism.
-      // A measured hold with no tremor (tremorDetected === false) counts as absence too.
-      value: isNum(tremorHz) || handF.tremorDetected === false ? 1 - restTremor : null,
-      weight: 0.08,
-      evidence: 'No rest tremor detected',
     },
     {
       value: isNum(gaitF.armSwingAsymmetry)
@@ -268,11 +274,23 @@ export function classifyPattern({ modules = {}, raw = {}, laterality = {}, overa
   const leadScore = Math.max(pScore, hScore);
   const trailScore = Math.min(pScore, hScore);
   const margin = leadScore - trailScore;
+  const leadStrongest = (leader === 'parkinsonian' ? parkinsonian.strongest : hemiparetic.strongest) ?? 0;
 
-  if (leadScore >= CONFIDENT_EVIDENCE && margin >= CONFIDENT_MARGIN) {
+  // Normal unless something is actually abnormal: a pattern is only reported
+  // when the measured scores are out of the normal band, there is a strong,
+  // specific finding (a rest tremor, an eye that will not close, a clearly
+  // weaker side), or two independent tests show the same weaker side beyond
+  // normal limits. Evidence scores alone, built from near-normal values, used
+  // to label healthy people.
+  const abnormal = overallScore < 80 || leadStrongest >= 0.6 || (leader === 'hemiparetic' && agreeing >= 2);
+  // One-sided weakness from a single test is not established: a stroke or
+  // palsy that only shows on one test is reported as possible, not confirmed.
+  const establishedSide = leader !== 'hemiparetic' || agreeing >= 2 || leadStrongest >= 0.8;
+
+  if (abnormal && leadScore >= CONFIDENT_EVIDENCE && margin >= CONFIDENT_MARGIN && establishedSide) {
     type = leader;
     confidence = clamp(leadScore * 0.7 + margin * 0.6, 0.3, 0.95);
-  } else if (leadScore >= TENTATIVE_EVIDENCE && margin >= TENTATIVE_MARGIN) {
+  } else if (abnormal && leadScore >= TENTATIVE_EVIDENCE && margin >= TENTATIVE_MARGIN) {
     // Leaning but not established — reported as a possible early pattern.
     type = leader;
     tentative = true;

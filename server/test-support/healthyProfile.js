@@ -2,7 +2,8 @@
  * A typical healthy adult's assessment payload, built from real-data reference
  * values: face metrics measured with MediaPipe on healthy photos, voice metrics
  * from the browser extractor on real healthy readers (KCL) and Praat measures of
- * healthy controls, hand from a simulated symmetric 4.5 Hz tapper.
+ * healthy controls, hand from a simulated tapper with the noise of real
+ * MediaPipe recordings and an ordinary dominant-hand advantage (right ~10% faster).
  */
 import { HandTracker } from '../../client/src/lib/handFeatures.js';
 import { simulateHand } from './handSim.js';
@@ -54,8 +55,8 @@ export const parkinsonianProfile = ({ fps = 30, seed = 1 } = {}) => {
   Object.assign(voice.features, { f0StdSemitones: 1.1, pauseRatio: 0.5, speechRateSyll: 1.6, maxPhonationSec: 3.5 });
   Object.assign(voice.ml, { pdLikeness: 0.82, elevated: true,
     features: { locPctJitter: 0.014, locShimmer: 0.13, meanHarmToNoiseHarmonicity: 12 } });
-  const hand = healthyHand({ fps, seed, tremorHz: 5, tremorAmp: 0.012,
-    tapHz: { left: 2.6, right: 2.8 }, tapOpen: { left: 0.45, right: 0.5 } });
+  const hand = healthyHand({ fps, seed, tremorHz: 5, tremorAmp: 0.12,
+    tapHz: { left: 1.6, right: 1.7 }, tapOpen: { left: 0.45, right: 0.5 } });
   return { voice, face, hand };
 };
 
@@ -67,6 +68,6 @@ export const rightWeaknessProfile = ({ fps = 30, seed = 1 } = {}) => {
     left: { expressivity: 0.13, smile: 0.8, brow: 0.45, eyeShutResidual: 0.03 },
     right: { expressivity: 0.05, smile: 0.22, brow: 0.12, eyeShutResidual: 0.1 },
   });
-  const hand = healthyHand({ fps, seed, tapHz: { left: 4.5, right: 1.8 }, tapOpen: { left: 0.9, right: 0.35 } });
+  const hand = healthyHand({ fps, seed, tapHz: { left: 3.8, right: 1.5 }, tapOpen: { left: 1.0, right: 0.35 } });
   return { voice: healthyVoice(), face, hand };
 };

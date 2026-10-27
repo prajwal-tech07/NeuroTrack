@@ -1,17 +1,26 @@
-import { cv, dist, mean, std } from './dsp.js';
+import { cv, dist, mean, median, std } from './dsp.js';
 
-/** FaceMesh landmark indices used for the geometric measures. */
+/**
+ * FaceMesh landmark indices used for the geometric measures, named by the
+ * subject's own (anatomical) side, the same convention as the blendshapes.
+ *
+ * Checked on 594 real photos: the 263/362/386/374 eye is always the one on the
+ * image's right, which on the un-mirrored camera frame is the subject's LEFT
+ * eye, and eyeBlinkLeft tracks that eye (r = -0.70; 94% agreement on faces
+ * with one eye clearly narrower). The previous mapping had the eyes swapped, so
+ * eye closure compared the opposite side to smile and brow.
+ */
 const LM = {
-  leftEyeUpper: 159,
-  leftEyeLower: 145,
-  leftEyeOuter: 33,
-  leftEyeInner: 133,
-  rightEyeUpper: 386,
-  rightEyeLower: 374,
-  rightEyeOuter: 263,
-  rightEyeInner: 362,
-  mouthLeft: 61,
-  mouthRight: 291,
+  leftEyeUpper: 386,
+  leftEyeLower: 374,
+  leftEyeOuter: 263,
+  leftEyeInner: 362,
+  rightEyeUpper: 159,
+  rightEyeLower: 145,
+  rightEyeOuter: 33,
+  rightEyeInner: 133,
+  mouthLeft: 291,
+  mouthRight: 61,
   lipUpper: 13,
   lipLower: 14,
   noseTip: 1,
@@ -53,6 +62,14 @@ const BLINK_ON = 0.5;
 const BLINK_OFF = 0.28;
 
 /**
+ * Reaction time after each cue. Frames from the moment a cue appears until the
+ * face has made the movement are not that movement: the first second of
+ * "close your eyes" is eyes still open, which read as an eye that won't close.
+ */
+const SETTLE_MS = 1000;
+const EYES_SHUT_SETTLE_MS = 1500;
+
+/**
  * Accumulates FaceLandmarker output frame by frame, then derives the feature
  * vector the server's face scorer and laterality engine consume.
  *
@@ -82,6 +99,12 @@ export class FaceTracker {
     // Aperture samples captured only while the user is told to shut their eyes.
     this.shutApertureL = [];
     this.shutApertureR = [];
+    // Eyes-open apertures (rest and brow cues, blinks excluded) for eye symmetry.
+    this.openApertureL = [];
+    this.openApertureR = [];
+
+    this.lastPhase = null;
+    this.phaseStartMs = null;
   }
 
   setPhase(phase) {
@@ -97,6 +120,11 @@ export class FaceTracker {
     this.frames++;
     if (this.startMs === null) this.startMs = timestampMs;
     this.endMs = timestampMs;
+    if (this.phase !== this.lastPhase) {
+      this.lastPhase = this.phase;
+      this.phaseStartMs = timestampMs;
+    }
+    const inPhaseMs = timestampMs - this.phaseStartMs;
     if (typeof brightness === 'number') this.brightness.push(brightness);
 
     const landmarks = result?.faceLandmarks?.[0];
@@ -114,7 +142,7 @@ export class FaceTracker {
     this.eyeApertureR.push(apertureR);
     this.mouthOpen.push(dist(landmarks[LM.lipUpper], landmarks[LM.lipLower]) / interocular);
 
-    if (this.phase === 'eyesShut') {
+    if (this.phase === 'eyesShut' && inPhaseMs >= EYES_SHUT_SETTLE_MS) {
       this.shutApertureL.push(apertureL);
       this.shutApertureR.push(apertureR);
     }
@@ -130,6 +158,12 @@ export class FaceTracker {
       this.blendshapeSeries.get(name).push(cat.score);
       if (name === 'eyeBlinkLeft') blinkL = cat.score;
       if (name === 'eyeBlinkRight') blinkR = cat.score;
+    }
+
+    const eyesOpenCue = (this.phase === 'rest' || this.phase === 'brow') && inPhaseMs >= SETTLE_MS;
+    if (eyesOpenCue && Math.max(blinkL, blinkR) < 0.35) {
+      this.openApertureL.push(apertureL);
+      this.openApertureR.push(apertureR);
     }
 
     // Blinks are only counted during the rest cue — the eyes-shut task would
@@ -212,15 +246,20 @@ export class FaceTracker {
       ? Math.max(...this.mouthOpen) - Math.min(...this.mouthOpen)
       : 0;
 
-    const meanL = mean(this.eyeApertureL);
-    const meanR = mean(this.eyeApertureR);
+    // Eye opening symmetry while the eyes are meant to be open; falls back to
+    // all frames for short recordings.
+    const openEnough = this.openApertureL.length >= 10;
+    const medL = median(openEnough ? this.openApertureL : this.eyeApertureL);
+    const medR = median(openEnough ? this.openApertureR : this.eyeApertureR);
     const eyeOpenAsymmetry =
-      meanL + meanR > 0 ? Math.abs(meanL - meanR) / ((meanL + meanR) / 2) : 0;
+      medL + medR > 0 ? Math.abs(medL - medR) / ((medL + medR) / 2) : 0;
 
     // Lagophthalmos: residual aperture while trying to shut the eyes. A healthy
     // eye closes to near zero; a weak orbicularis oculi leaves a visible gap.
-    const shutL = this.shutApertureL.length ? mean(this.shutApertureL) : null;
-    const shutR = this.shutApertureR.length ? mean(this.shutApertureR) : null;
+    // Median after the reaction time, so a late close or a peek does not count.
+    const enoughShut = this.shutApertureL.length >= 5;
+    const shutL = enoughShut ? median(this.shutApertureL) : null;
+    const shutR = enoughShut ? median(this.shutApertureR) : null;
     const eyeClosureGap =
       shutL !== null && shutR !== null ? Math.abs(shutL - shutR) : 0;
 
