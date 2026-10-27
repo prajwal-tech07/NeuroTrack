@@ -417,7 +417,13 @@ export function buildAssessmentPDF(user, assessment) {
         y = 60;
       }
       const statusColor =
-        ind.status === 'normal' ? RISK_COLORS.low : ind.status === 'borderline' ? RISK_COLORS.mild : RISK_COLORS.high;
+        ind.status === 'normal'
+          ? RISK_COLORS.low
+          : ind.status === 'borderline'
+            ? RISK_COLORS.mild
+            : ind.status === 'atypical'
+              ? RISK_COLORS.high
+              : MUTED;
 
       doc.fillColor(INK).fontSize(8.5).font('Helvetica').text(ind.label, 50, y, { width: 200 });
       doc.text(ind.value === null ? '—' : `${ind.value}${ind.unit ? ` ${ind.unit}` : ''}`, 255, y, {

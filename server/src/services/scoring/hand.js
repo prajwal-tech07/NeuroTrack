@@ -13,11 +13,11 @@ import {
  * Hand movement / tremor analysis.
  *
  * The browser runs MediaPipe HandLandmarker over two tasks:
- *   1. Finger tapping - thumb tip to index tip, 15 s, as big and fast as possible.
- *   2. Postural hold  - hand held out steady, 10 s.
+ *   1. Finger tapping - thumb tip to index tip, 10 s per hand, as big and fast as possible.
+ *   2. Postural hold  - hand held out steady, 7 s per hand.
  *
  * Features consumed:
- *   tapFrequencyHz        taps per second                  (>= 4 Hz typical)
+ *   tapFrequencyHz        taps per second                  (>= 2.2 Hz typical on camera)
  *   tapAmplitudeMean      mean normalised tap opening
  *   tapAmplitudeDecay     % amplitude lost first->last third (sequence effect)
  *   tapIntervalCv         coefficient of variation of inter-tap intervals
@@ -42,18 +42,29 @@ export function scoreHand(raw = {}) {
     };
   }
 
-  const speed = scoreHigherIsBetter(f.tapFrequencyHz, 4.0, 1.2);
-  const amplitude = scoreHigherIsBetter(f.tapAmplitudeMean, 0.3, 0.07);
-  const decay = scoreLowerIsBetter(f.tapAmplitudeDecay, 0.12, 0.55);
-  const rhythm = scoreLowerIsBetter(f.tapIntervalCv, 0.18, 0.6);
-  const hesitation = scoreLowerIsBetter(f.tapHesitations, 0, 6);
+  // Reference ranges measured with the browser feature code on real MediaPipe
+  // recordings rated by a doctor (MDS-UPDRS finger tapping / postural tremor,
+  // PN Expert): "normal" (rated 0) hands tap at 3.2 Hz median (10th pct 2.0),
+  // open 1.28 palm lengths (10th pct 0.64), lose < 0.31 of amplitude (90th pct)
+  // and drift < 0.65 palm lengths (90th pct) over a hold. The previous limits
+  // (4 Hz, 0.02 drift...) were stricter than what normal hands do on camera.
+  const speed = scoreHigherIsBetter(f.tapFrequencyHz, 2.2, 0.8);
+  const amplitude = scoreHigherIsBetter(f.tapAmplitudeMean, 0.6, 0.15);
+  const decay = scoreLowerIsBetter(f.tapAmplitudeDecay, 0.3, 0.7);
+  // Rhythm and hesitations barely differ between normal and impaired hands on
+  // camera (normal 90th pct: CV 0.70, 5 hesitations): lenient and lightly weighted.
+  const rhythm = scoreLowerIsBetter(f.tapIntervalCv, 0.6, 1.2);
+  const hesitation = scoreLowerIsBetter(f.tapHesitations, 5, 10);
   const tremorPower = scoreLowerIsBetter(f.tremorPowerRatio, 0.12, 0.55);
-  const steadiness = scoreLowerIsBetter(f.holdDriftPx, 0.02, 0.12);
+  const steadiness = scoreLowerIsBetter(f.holdDriftPx, 0.4, 1.1);
 
   // A dominant frequency in the 4-6 Hz rest-tremor band is the concerning
   // pattern; physiological tremor sits higher (8-12 Hz) and is unremarkable.
-  const tremorBand =
-    isNum(f.tremorPeakHz) && isNum(f.tremorPowerRatio)
+  // `tremorDetected === false` means the hold was measured and no oscillation
+  // stood out from tracking noise: that is a normal result, not a missing one.
+  const tremorBand = f.tremorDetected === false
+    ? 100
+    : isNum(f.tremorPeakHz) && isNum(f.tremorPowerRatio)
       ? f.tremorPeakHz >= 3.5 && f.tremorPeakHz <= 6.5
         ? scoreLowerIsBetter(f.tremorPowerRatio, 0.08, 0.4)
         : 100
@@ -66,7 +77,7 @@ export function scoreHand(raw = {}) {
       value: f.tapFrequencyHz,
       unit: 'Hz',
       score: speed,
-      normal: '>= 4 taps/s',
+      normal: '>= 2.2 taps/s',
       note: 'Bradykinesia shows up as slowed repetitive movement.',
     }),
     indicator({
@@ -75,7 +86,7 @@ export function scoreHand(raw = {}) {
       value: f.tapAmplitudeMean,
       unit: '',
       score: amplitude,
-      normal: '> 0.30',
+      normal: '> 0.60',
       note: 'How wide the thumb and index finger separate.',
     }),
     indicator({
@@ -84,7 +95,7 @@ export function scoreHand(raw = {}) {
       value: f.tapAmplitudeDecay,
       unit: '',
       score: decay,
-      normal: '< 0.12',
+      normal: '< 0.30',
       note: 'Taps shrinking over the trial (sequence effect).',
     }),
     indicator({
@@ -93,7 +104,7 @@ export function scoreHand(raw = {}) {
       value: f.tapIntervalCv,
       unit: '',
       score: rhythm,
-      normal: '< 0.18',
+      normal: '< 0.60',
       note: 'Variability between successive taps.',
     }),
     indicator({
@@ -102,7 +113,7 @@ export function scoreHand(raw = {}) {
       value: f.tapHesitations,
       unit: '',
       score: hesitation,
-      normal: '0',
+      normal: '<= 5',
       note: 'Momentary freezing during tapping.',
     }),
     indicator({
@@ -129,20 +140,20 @@ export function scoreHand(raw = {}) {
       value: f.holdDriftPx,
       unit: '',
       score: steadiness,
-      normal: '< 0.02',
-      note: 'Slow drift while holding the hand out.',
+      normal: '< 0.40',
+      note: 'Slow drift while holding the hand out (palm lengths).',
     }),
   ];
 
   const base = weightedMean([
-    { score: speed, weight: 0.18 },
-    { score: amplitude, weight: 0.14 },
-    { score: decay, weight: 0.14 },
-    { score: rhythm, weight: 0.14 },
-    { score: tremorBand, weight: 0.16 },
+    { score: speed, weight: 0.24 },
+    { score: amplitude, weight: 0.16 },
+    { score: decay, weight: 0.16 },
+    { score: rhythm, weight: 0.05 },
+    { score: tremorBand, weight: 0.18 },
     { score: tremorPower, weight: 0.1 },
     { score: steadiness, weight: 0.08 },
-    { score: hesitation, weight: 0.06 },
+    { score: hesitation, weight: 0.03 },
   ]);
 
   const score = clamp(base * (0.85 + 0.15 * quality));

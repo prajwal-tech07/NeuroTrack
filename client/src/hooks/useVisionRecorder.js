@@ -9,7 +9,7 @@ import { frameBrightness, startCamera, stopStream } from '../lib/mediapipe.js';
  *
  * @param {object}   options
  * @param {Function} options.loadLandmarker  async () => landmarker
- * @param {Function} options.onResult        (result, timestampMs, brightness) => void
+ * @param {Function} options.onResult        (result, timestampMs, brightness, video) => void
  * @param {Function} [options.onDraw]        (ctx, result, video) => void  overlay painter
  * @param {number}   options.durationSec     capture length
  * @param {Function} [options.onComplete]    called once when the timer finishes
@@ -31,6 +31,13 @@ export function useVisionRecorder({
   const startedAtRef = useRef(0);
   const lastTimestampRef = useRef(-1);
   const runningRef = useRef(false);
+  // Per-frame bookkeeping kept out of React state: re-rendering on every frame
+  // (as before) cut the analysed frame rate on ordinary laptops.
+  const lastVideoTimeRef = useRef(-1);
+  const frameIndexRef = useRef(0);
+  const brightnessRef = useRef(undefined);
+  const lastUiUpdateRef = useRef(0);
+  const detectingRef = useRef(false);
 
   const [status, setStatus] = useState('idle'); // idle | loading | ready | recording | done | error
   const [error, setError] = useState(null);
@@ -89,7 +96,17 @@ export function useVisionRecorder({
     const video = videoRef.current;
     const landmarker = landmarkerRef.current;
 
-    if (video && landmarker && video.readyState >= 2) {
+    // Only analyse a frame the camera has actually delivered. requestAnimationFrame
+    // runs at the screen rate (60+ Hz) while cameras deliver ~30 fps, so the old
+    // loop re-analysed duplicate frames and wasted the time real frames needed.
+    // Fallback: some browsers advance currentTime coarsely for live streams, so
+    // never wait more than 100 ms between analysed frames.
+    const freshFrame =
+      video &&
+      (video.currentTime !== lastVideoTimeRef.current || performance.now() - lastTimestampRef.current > 100);
+
+    if (video && landmarker && video.readyState >= 2 && freshFrame) {
+      lastVideoTimeRef.current = video.currentTime;
       // MediaPipe's VIDEO mode requires strictly increasing timestamps.
       let ts = performance.now();
       if (ts <= lastTimestampRef.current) ts = lastTimestampRef.current + 1;
@@ -98,18 +115,23 @@ export function useVisionRecorder({
       try {
         const result = landmarker.detectForVideo(video, ts);
 
-        let brightness;
-        try {
-          brightness = frameBrightness(video, brightnessCanvasRef.current);
-        } catch {
-          brightness = undefined;
+        // Brightness changes slowly; reading back pixels every frame is costly.
+        if (frameIndexRef.current++ % 10 === 0) {
+          try {
+            brightnessRef.current = frameBrightness(video, brightnessCanvasRef.current);
+          } catch {
+            brightnessRef.current = undefined;
+          }
         }
 
-        cbs.current.onResult?.(result, ts, brightness);
+        cbs.current.onResult?.(result, ts, brightnessRef.current, video);
 
         const hasSubject =
           (result?.faceLandmarks?.length || result?.landmarks?.length || 0) > 0;
-        setDetecting(hasSubject);
+        if (hasSubject !== detectingRef.current) {
+          detectingRef.current = hasSubject;
+          setDetecting(hasSubject);
+        }
 
         const overlay = overlayRef.current;
         if (overlay && cbs.current.onDraw) {
@@ -126,8 +148,12 @@ export function useVisionRecorder({
       }
     }
 
-    const secs = (performance.now() - startedAtRef.current) / 1000;
-    setElapsed(secs);
+    const now = performance.now();
+    const secs = (now - startedAtRef.current) / 1000;
+    if (now - lastUiUpdateRef.current > 120) {
+      lastUiUpdateRef.current = now;
+      setElapsed(secs);
+    }
 
     if (secs >= durationSec) {
       runningRef.current = false;
@@ -147,6 +173,10 @@ export function useVisionRecorder({
     }
     startedAtRef.current = performance.now();
     lastTimestampRef.current = -1;
+    lastVideoTimeRef.current = -1;
+    frameIndexRef.current = 0;
+    brightnessRef.current = undefined;
+    detectingRef.current = false;
     runningRef.current = true;
     setElapsed(0);
     setStatus('recording');

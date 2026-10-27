@@ -10,7 +10,8 @@
     "seed": "node scripts/seed.js",
     "validate": "node scripts/validate.js",
     "test": "node --test",
-    "research:export": "node scripts/export-research.js"
+    "research:export": "node scripts/export-research.js",
+    "evaluate:hand": "node scripts/evaluate-hand-real.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

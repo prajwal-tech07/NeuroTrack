@@ -26,6 +26,7 @@ const STATUS_STYLE = {
   borderline: 'text-risk-mild bg-risk-mild/10 border-risk-mild/25',
   atypical: 'text-risk-high bg-risk-high/10 border-risk-high/25',
   unknown: 'muted bg-slate-100 border-slate-200 dark:bg-slate-800 dark:border-slate-700',
+  info: 'muted bg-slate-100 border-slate-200 dark:bg-slate-800 dark:border-slate-700',
 };
 
 function IndicatorTable({ moduleKey, module }) {

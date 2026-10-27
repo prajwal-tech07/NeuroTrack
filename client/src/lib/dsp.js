@@ -132,7 +132,7 @@ export function powerSpectrum(signal, sampleRate) {
  * @returns {{peakHz: number, peakPower: number, bandRatio: number, totalPower: number}}
  */
 export function spectralPeak(signal, sampleRate, { minHz = 0.5, maxHz = 15, bandLo = 3.5, bandHi = 6.5 } = {}) {
-  if (signal.length < 8) return { peakHz: 0, peakPower: 0, bandRatio: 0, totalPower: 0 };
+  if (signal.length < 8) return { peakHz: 0, peakPower: 0, bandRatio: 0, totalPower: 0, peakiness: 0 };
 
   const { freqs, power } = powerSpectrum(detrend(signal, 21), sampleRate);
 
@@ -140,11 +140,13 @@ export function spectralPeak(signal, sampleRate, { minHz = 0.5, maxHz = 15, band
   let peakPower = 0;
   let bandPower = 0;
   let totalPower = 0;
+  const inRange = [];
 
   for (let k = 1; k < freqs.length; k++) {
     const f = freqs[k];
     if (f < minHz || f > maxHz) continue;
     totalPower += power[k];
+    inRange.push(power[k]);
     if (f >= bandLo && f <= bandHi) bandPower += power[k];
     if (power[k] > peakPower) {
       peakPower = power[k];
@@ -157,6 +159,8 @@ export function spectralPeak(signal, sampleRate, { minHz = 0.5, maxHz = 15, band
     peakPower,
     bandRatio: totalPower > 0 ? bandPower / totalPower : 0,
     totalPower,
+    // How far the peak stands above the typical bin: ~2-4 for noise, >>6 for a real oscillation.
+    peakiness: inRange.length ? peakPower / (median(inRange) || 1e-12) : 0,
   };
 }
 
@@ -166,19 +170,19 @@ export function spectralPeak(signal, sampleRate, { minHz = 0.5, maxHz = 15, band
  */
 export function detectPitch(frame, sampleRate, { minHz = 60, maxHz = 500, threshold = 0.3 } = {}) {
   const n = frame.length;
-  const energy = rms(frame);
-  if (energy < 0.008) return { f0: 0, clarity: 0 };
+  // No absolute loudness gate: the voice test disables auto-gain, so speech on
+  // many laptop microphones sits well below any fixed level. Silence is judged
+  // relative to the recording itself by the caller.
+  if (rms(frame) < 1e-5) return { f0: 0, clarity: 0 };
 
   const minLag = Math.floor(sampleRate / maxHz);
   const maxLag = Math.min(n - 1, Math.floor(sampleRate / minHz));
-  if (maxLag <= minLag) return { f0: 0, clarity: 0 };
+  if (maxLag <= minLag + 2) return { f0: 0, clarity: 0 };
 
-  // Normalised square-difference function (the YIN/McLeod family), which is far
-  // more robust than raw autocorrelation for voice.
-  let bestLag = -1;
-  let bestValue = 0;
-
-  for (let lag = minLag; lag <= maxLag; lag++) {
+  // Normalised correlation per lag (the YIN/McLeod family).
+  const values = new Float64Array(maxLag + 2);
+  let globalMax = 0;
+  for (let lag = minLag; lag <= maxLag + 1 && lag < n; lag++) {
     let num = 0;
     let denA = 0;
     let denB = 0;
@@ -188,15 +192,30 @@ export function detectPitch(frame, sampleRate, { minHz = 60, maxHz = 500, thresh
       denB += frame[i + lag] * frame[i + lag];
     }
     const den = Math.sqrt(denA * denB);
-    const value = den > 0 ? num / den : 0;
-    if (value > bestValue) {
-      bestValue = value;
+    values[lag] = den > 0 ? num / den : 0;
+    if (lag <= maxLag && values[lag] > globalMax) globalMax = values[lag];
+  }
+  if (globalMax < threshold) return { f0: 0, clarity: globalMax };
+
+  // First local maximum close to the best one. Taking the global maximum picks
+  // multiples of the true period (octave errors), which made F0 jump between
+  // frames and read as huge "jitter".
+  let bestLag = -1;
+  for (let lag = minLag + 1; lag <= maxLag; lag++) {
+    if (values[lag] >= 0.9 * globalMax && values[lag] >= values[lag - 1] && values[lag] >= values[lag + 1]) {
       bestLag = lag;
+      break;
     }
   }
+  if (bestLag < 0) return { f0: 0, clarity: globalMax };
 
-  if (bestLag < 0 || bestValue < threshold) return { f0: 0, clarity: bestValue };
-  return { f0: sampleRate / bestLag, clarity: bestValue };
+  // Parabolic interpolation for sub-sample period precision.
+  const y0 = values[bestLag - 1];
+  const y1 = values[bestLag];
+  const y2 = values[bestLag + 1];
+  const denom = y0 - 2 * y1 + y2;
+  const shift = denom !== 0 ? Math.max(-0.5, Math.min(0.5, (0.5 * (y0 - y2)) / denom)) : 0;
+  return { f0: sampleRate / (bestLag + shift), clarity: y1 };
 }
 
 /**

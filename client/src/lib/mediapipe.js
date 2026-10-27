@@ -53,7 +53,9 @@ export async function loadHandLandmarker() {
   cache.hand = await HandLandmarker.createFromOptions(vision, {
     baseOptions: { modelAssetPath: MODELS.hand, delegate: 'GPU' },
     runningMode: 'VIDEO',
-    numHands: 1,
+    // Two, so the hand being tested can be picked by its handedness label
+    // instead of whichever hand the tracker happened to lock onto first.
+    numHands: 2,
     minHandDetectionConfidence: 0.5,
     minTrackingConfidence: 0.5,
   });

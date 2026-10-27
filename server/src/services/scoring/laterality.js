@@ -19,18 +19,26 @@ import { clamp, isNum } from './common.js';
  * @param {number} left
  * @param {number} right
  * @param {boolean} higherIsBetter whether a larger value means healthier
+ * @param {number} floor smallest magnitude that counts as a real signal. The
+ *   difference is divided by max(|left|, |right|, floor), so two values that are
+ *   both just measurement noise (an eye gap of 0.01 vs 0.02, a drift of +0.002
+ *   vs -0.003) cannot read as a 100% one-sided difference.
+ * @param {number} tolerance relative difference healthy people show anyway
+ *   (dominant vs non-dominant hand, camera angle). Only the part beyond it
+ *   counts, rescaled to 0..1, so ordinary handedness does not read as weakness.
  * @returns {{index: number, weakSide: 'left'|'right'|null}|null}
  */
-export function pairAsymmetry(left, right, higherIsBetter = true) {
+export function pairAsymmetry(left, right, higherIsBetter = true, floor = 0, tolerance = 0) {
   if (!isNum(left) || !isNum(right)) return null;
 
-  const scale = Math.max(Math.abs(left), Math.abs(right));
+  const scale = Math.max(Math.abs(left), Math.abs(right), floor);
   if (scale < 1e-6) return { index: 0, weakSide: null };
 
-  const index = clamp(Math.abs(left - right) / scale, 0, 1);
+  const raw = clamp(Math.abs(left - right) / scale, 0, 1);
+  const index = tolerance > 0 ? clamp((raw - tolerance) / (1 - tolerance), 0, 1) : raw;
 
   let weakSide = null;
-  if (Math.abs(left - right) > 1e-9) {
+  if (index > 1e-9) {
     const leftWorse = higherIsBetter ? left < right : left > right;
     weakSide = leftWorse ? 'left' : 'right';
   }
@@ -43,21 +51,30 @@ export function pairAsymmetry(left, right, higherIsBetter = true) {
  * `higherIsBetter: false` means a larger number is the impaired direction
  * (a residual eye gap, a downward arm drift, a longer gap between steps).
  */
+// `floor` = the magnitude of a clearly real (healthy-range) value for that measure,
+// in its own units. Below it, differences are treated as noise-level.
+// `tolerance` = side difference healthy people show anyway (see pairAsymmetry).
 const PAIRED_MEASURES = {
   face: [
-    { key: 'expressivity', label: 'Side expressivity', higherIsBetter: true, weight: 0.34 },
-    { key: 'smile', label: 'Smile excursion', higherIsBetter: true, weight: 0.3 },
-    { key: 'brow', label: 'Brow elevation', higherIsBetter: true, weight: 0.16 },
-    { key: 'eyeShutResidual', label: 'Eye closure', higherIsBetter: false, weight: 0.2 },
+    { key: 'expressivity', label: 'Side expressivity', higherIsBetter: true, weight: 0.34, floor: 0.03, tolerance: 0.25 },
+    // Healthy smile peak blendshape: median 0.58 on healthy faces.
+    { key: 'smile', label: 'Smile excursion', higherIsBetter: true, weight: 0.3, floor: 0.2, tolerance: 0.25 },
+    { key: 'brow', label: 'Brow elevation', higherIsBetter: true, weight: 0.16, floor: 0.1, tolerance: 0.3 },
+    // Eye height / interocular distance: ~0.08 open (healthy photos, MediaPipe),
+    // ~0.01-0.02 shut; an incompletely closing eye leaves ~0.03-0.06.
+    { key: 'eyeShutResidual', label: 'Eye closure', higherIsBetter: false, weight: 0.2, floor: 0.03, tolerance: 0.2 },
   ],
   hand: [
-    { key: 'tapFrequencyHz', label: 'Tap speed', higherIsBetter: true, weight: 0.4 },
-    { key: 'tapAmplitudeMean', label: 'Tap amplitude', higherIsBetter: true, weight: 0.32 },
-    { key: 'holdDropY', label: 'Arm drift', higherIsBetter: false, weight: 0.28 },
+    // Dominant hands tap ~10% faster, up to ~25% in healthy people.
+    { key: 'tapFrequencyHz', label: 'Tap speed', higherIsBetter: true, weight: 0.45, floor: 1.5, tolerance: 0.25 },
+    { key: 'tapAmplitudeMean', label: 'Tap amplitude', higherIsBetter: true, weight: 0.4, floor: 0.4, tolerance: 0.3 },
+    // Palm lengths over the hold. Normal holds drift up to ~0.65 (90th pct, real
+    // recordings), so this is weak evidence and weighted lightly.
+    { key: 'holdDropY', label: 'Arm drift', higherIsBetter: false, weight: 0.15, floor: 0.6, tolerance: 0.2 },
   ],
   gait: [
-    { key: 'armSwing', label: 'Arm swing', higherIsBetter: true, weight: 0.55 },
-    { key: 'stepInterval', label: 'Step interval', higherIsBetter: false, weight: 0.45 },
+    { key: 'armSwing', label: 'Arm swing', higherIsBetter: true, weight: 0.55, floor: 0.05, tolerance: 0.2 },
+    { key: 'stepInterval', label: 'Step interval', higherIsBetter: false, weight: 0.45, floor: 0.4, tolerance: 0.1 },
   ],
 };
 
@@ -88,7 +105,7 @@ export function analyzeLaterality(modules = {}) {
     const modVotes = { left: 0, right: 0 };
 
     for (const m of measures) {
-      const pair = pairAsymmetry(left[m.key], right[m.key], m.higherIsBetter);
+      const pair = pairAsymmetry(left[m.key], right[m.key], m.higherIsBetter, m.floor, m.tolerance);
       if (!pair) continue;
 
       weighted += pair.index * m.weight;

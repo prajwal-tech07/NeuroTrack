@@ -11,6 +11,31 @@ const SUSTAIN_SEC = 8;
 const READ_SEC = 12;
 const TOTAL_SEC = SUSTAIN_SEC + READ_SEC;
 
+/**
+ * Measures shown after recording. Jitter, shimmer and HNR come from the voice
+ * model's Praat analysis of the vowel; the browser's own frame-level estimates
+ * of those are not reliable enough to display.
+ */
+function voiceSummary(result) {
+  const f = result.features;
+  const p = result.ml?.features;
+  const fmt = (v, d, unit) => (Number.isFinite(v) ? `${v.toFixed(d)}${unit}` : '—');
+  if (p) {
+    return [
+      ['Jitter', fmt(p.locPctJitter * 100, 2, '%')],
+      ['Shimmer', fmt(p.locShimmer * 100, 1, '%')],
+      ['HNR', fmt(p.meanHarmToNoiseHarmonicity, 1, ' dB')],
+      ['Pitch range', fmt(f.f0StdSemitones, 1, ' st')],
+    ];
+  }
+  return [
+    ['Pitch range', fmt(f.f0StdSemitones, 1, ' st')],
+    ['Pauses', fmt(f.pauseRatio * 100, 0, '%')],
+    ['Longest "Aaah"', fmt(f.maxPhonationSec, 1, ' s')],
+    ['Speech rate', fmt(f.speechRateSyll, 1, '/s')],
+  ];
+}
+
 export default function VoiceTest({ onComplete, onSkip, initial }) {
   const [phase, setPhase] = useState('idle'); // idle | recording | analysing | done | error
   const [elapsed, setElapsed] = useState(0);
@@ -73,7 +98,7 @@ export default function VoiceTest({ onComplete, onSkip, initial }) {
       setPhase('analysing');
       try {
         const buffer = await decodeRecording(blob);
-        const features = extractVoiceFeatures(buffer);
+        const features = extractVoiceFeatures(buffer, { sustainSec: SUSTAIN_SEC });
 
         if (features.insufficientData) {
           setError(
@@ -286,12 +311,7 @@ export default function VoiceTest({ onComplete, onSkip, initial }) {
                 mlNote && <p className="text-center text-[11px] muted">{mlNote}</p>
               )}
               <dl className="grid w-full grid-cols-2 gap-2 text-center text-[11px]">
-                {[
-                  ['Jitter', `${result.features.jitterPercent}%`],
-                  ['Shimmer', `${result.features.shimmerPercent}%`],
-                  ['HNR', `${result.features.hnrDb} dB`],
-                  ['Pitch range', `${result.features.f0StdSemitones} st`],
-                ].map(([k, v]) => (
+                {voiceSummary(result).map(([k, v]) => (
                   <div key={k} className="rounded-lg bg-white/70 px-2 py-2 dark:bg-slate-900/40">
                     <dt className="muted">{k}</dt>
                     <dd className="font-bold text-ink dark:text-slate-100">{v}</dd>

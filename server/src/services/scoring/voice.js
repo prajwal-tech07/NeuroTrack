@@ -51,6 +51,7 @@ function sanitizeMl(ml) {
     reliable: ml.reliable === true,
     distributionDistance: isNum(ml.distributionDistance) ? ml.distributionDistance : null,
     engine: typeof ml.engine === 'string' ? ml.engine.slice(0, 80) : 'unknown',
+    praat: praatMeasures(ml),
     validation: {
       auc: isNum(v.auc) ? v.auc : null,
       balancedAccuracy: isNum(v.balancedAccuracy) ? v.balancedAccuracy : null,
@@ -59,6 +60,43 @@ function sanitizeMl(ml) {
       trainingSubjects: isNum(v.trainingSubjects) ? v.trainingSubjects : null,
     },
   };
+}
+
+/**
+ * Reference ranges ("good" = full marks, "bad" = zero), calibrated on real
+ * healthy speakers rather than textbook cut-offs that failed them:
+ *  - jitter/shimmer/HNR: Praat measures of 105 healthy controls (Sakar 2018
+ *    studio, Iyer 2023 phone). Healthy shimmer has a median of 4.6-5.7%, so
+ *    the classic 3.81% limit failed over half of healthy people.
+ *  - pauses, rate, loudness: this app's browser measures on 21 healthy readers
+ *    (KCL 2019); good ~ healthy 75th percentile.
+ *  - phonation: the cue is an 8 s "Aaah", so the old 12 s target was unreachable.
+ */
+export const R = {
+  jitter: { good: 1.04, bad: 3.0 },
+  shimmer: { good: 9, bad: 20 },
+  hnr: { good: 15, bad: 6 },
+  pauses: { good: 0.37, bad: 0.65 },
+  rate: { lo: 2.2, hi: 4.5, badLo: 1.0, badHi: 7.0 },
+  phonation: { good: 5.5, bad: 2.0 },
+  loudness: { good: 0.62, bad: 1.5 },
+};
+
+/** Praat cycle-level measures from the voice model, in display units. */
+function praatMeasures(ml) {
+  const p = ml?.features;
+  if (!p || !isNum(p.locPctJitter) || !isNum(p.locShimmer) || !isNum(p.meanHarmToNoiseHarmonicity)) return null;
+  // Range-checked: the payload passes through the client.
+  return {
+    jitterPercent: clamp(p.locPctJitter * 100, 0, 50),
+    shimmerPercent: clamp(p.locShimmer * 100, 0, 100),
+    hnrDb: clamp(p.meanHarmToNoiseHarmonicity, -10, 50),
+  };
+}
+
+/** Assessments recorded before the browser marked its estimates as frame-level. */
+function legacyMeasures(f) {
+  return { jitterPercent: f.jitterPercent, shimmerPercent: f.shimmerPercent, hnrDb: f.hnrDb };
 }
 
 export function scoreVoice(raw = {}) {
@@ -76,41 +114,47 @@ export function scoreVoice(raw = {}) {
     };
   }
 
-  const jitter = scoreLowerIsBetter(f.jitterPercent, 1.04, 3.2);
-  const shimmer = scoreLowerIsBetter(f.shimmerPercent, 3.81, 10.5);
-  const hnr = scoreHigherIsBetter(f.hnrDb, 20, 7);
+  // Jitter / shimmer / HNR are only meaningful as cycle-level Praat measures of
+  // the sustained vowel, which the voice model provides. The browser's
+  // frame-level estimates do not separate healthy from Parkinsonian voices
+  // (checked on 81 real recordings) and are not scored.
+  const praat = praatMeasures(raw.ml);
+  const perturbation = praat || (f.perturbationSource === 'browser-frame-level' ? null : legacyMeasures(f));
+  const jitter = perturbation ? scoreLowerIsBetter(perturbation.jitterPercent, R.jitter.good, R.jitter.bad) : null;
+  const shimmer = perturbation ? scoreLowerIsBetter(perturbation.shimmerPercent, R.shimmer.good, R.shimmer.bad) : null;
+  const hnr = perturbation ? scoreHigherIsBetter(perturbation.hnrDb, R.hnr.good, R.hnr.bad) : null;
   const prosody = scoreHigherIsBetter(f.f0StdSemitones, 2.4, 0.6);
-  const pauses = scoreLowerIsBetter(f.pauseRatio, 0.22, 0.55);
-  const rate = scoreInRange(f.speechRateSyll, 3.5, 6.0, 1.6, 8.5);
-  const phonation = scoreHigherIsBetter(f.maxPhonationSec, 12, 4);
-  const loudness = scoreLowerIsBetter(f.intensityCv, 0.22, 0.6);
+  const pauses = scoreLowerIsBetter(f.pauseRatio, R.pauses.good, R.pauses.bad);
+  const rate = scoreInRange(f.speechRateSyll, R.rate.lo, R.rate.hi, R.rate.badLo, R.rate.badHi);
+  const phonation = scoreHigherIsBetter(f.maxPhonationSec, R.phonation.good, R.phonation.bad);
+  const loudness = scoreLowerIsBetter(f.intensityCv, R.loudness.good, R.loudness.bad);
 
   const indicators = [
     indicator({
       key: 'jitter',
       label: 'Pitch stability (jitter)',
-      value: f.jitterPercent,
+      value: perturbation?.jitterPercent ?? null,
       unit: '%',
       score: jitter,
-      normal: '< 1.04%',
+      normal: `< ${R.jitter.good}%`,
       note: 'Cycle-to-cycle variation in vocal fold vibration.',
     }),
     indicator({
       key: 'shimmer',
       label: 'Loudness stability (shimmer)',
-      value: f.shimmerPercent,
+      value: perturbation?.shimmerPercent ?? null,
       unit: '%',
       score: shimmer,
-      normal: '< 3.81%',
+      normal: `< ${R.shimmer.good}%`,
       note: 'Cycle-to-cycle variation in amplitude.',
     }),
     indicator({
       key: 'hnr',
       label: 'Harmonics-to-noise ratio',
-      value: f.hnrDb,
+      value: perturbation?.hnrDb ?? null,
       unit: 'dB',
       score: hnr,
-      normal: '> 20 dB',
+      normal: `> ${R.hnr.good} dB`,
       note: 'How clear the voice is relative to breathy noise.',
     }),
     indicator({
@@ -128,7 +172,7 @@ export function scoreVoice(raw = {}) {
       value: f.pauseRatio,
       unit: '',
       score: pauses,
-      normal: '< 0.22',
+      normal: `< ${R.pauses.good}`,
       note: 'Proportion of the read passage spent silent.',
     }),
     indicator({
@@ -137,7 +181,7 @@ export function scoreVoice(raw = {}) {
       value: f.speechRateSyll,
       unit: 'syll/s',
       score: rate,
-      normal: '3.5 - 6.0 syll/s',
+      normal: `${R.rate.lo} - ${R.rate.hi} syll/s`,
       note: 'Both slowed and rushed speech are tracked.',
     }),
     indicator({
@@ -146,7 +190,7 @@ export function scoreVoice(raw = {}) {
       value: f.maxPhonationSec,
       unit: 's',
       score: phonation,
-      normal: '> 12 s',
+      normal: `> ${R.phonation.good} s (of the 8 s cue)`,
       note: 'How long a vowel can be held on one breath.',
     }),
     indicator({
@@ -155,7 +199,7 @@ export function scoreVoice(raw = {}) {
       value: f.intensityCv,
       unit: '',
       score: loudness,
-      normal: '< 0.22',
+      normal: `< ${R.loudness.good}`,
       note: 'Fading volume across a sentence.',
     }),
   ];
